@@ -30,3 +30,28 @@ Wrote `docs/plans/0065-compaction-reasoning-extraction-refusal.md`: a dual-gated
 - Design detail worth not losing: the strip must run **before** `prependBillingHeader`, or the `cch` hash describes a message body Anthropic never receives.
   The plan pins that ordering with its own test rather than leaving it incidental.
 - Segment parsing splits on paragraph boundaries followed by a known marker, not on bare `\n\n`, because a reasoning block can contain blank lines and a naive split would orphan its tail inside the request.
+
+## Stage: Implementation — TDD (2026-09-14T20:50:00Z)
+
+### Session summary
+
+Landed all six planned TDD cycles plus one Tidy-First preparatory refactor, closing the `reasoning_extraction` refusal on OAuth summarization requests.
+Test count went from 64 tests across 8 files to 78 across 9.
+The pre-completion reviewer returned PASS, and a live `pi -ne -e` smoke repro confirmed the extension still loads and ordinary turns still work.
+
+### Observations
+
+- The Tidy-First assessor recommended exactly one preparatory commit — extracting `normalizeSystemBlocks` out of `prependBillingHeader`'s inline three-way ternary — because the new summarization gate needs the same normalized `TextBlock[]` earlier in the pipeline.
+  It landed as `a9e3255` and made the `fix:` commit's gate a single reused call.
+  The assessor explicitly rejected unifying the duplicated `TextBlock`/`MessageParam` type declarations, on the grounds that keeping `src/summarization-shaping.ts` purely string-level is the plan's design, not an oversight.
+- Deviation from the plan: TDD step 2 was planned as `feat:` but committed as `refactor:`.
+  Nothing referenced the new module at that commit, so a `feat:` line would have put a second, user-meaningless entry in the changelog for one change.
+  `cliff.toml` skips `refactor:`, so the changelog now carries exactly the one `fix:` line that names the observable outcome.
+- The first green attempt failed two tests over envelope whitespace: removing the first or last transcript segment took the envelope's own framing newline with it.
+  Fixed by holding the leading and trailing newline runs aside with `/^(\n*)([\s\S]*?)(\n*)$/` and rejoining, rather than treating them as part of any segment.
+- The two drift tests passed on first write, which the `testing` skill flags as either a pin or a broken probe.
+  Proved they are pins by mutation: renaming `PI_TRANSCRIPT_THINKING_MARKER` and altering the summarization anchor each red the corresponding test, then reverted.
+- `serializeConversation`'s real output confirmed the multi-paragraph hazard the plan predicted: a thinking block containing a blank line serializes as `[Assistant thinking]: Reason A.\n\nReason B.`, which a naive `split(/\n\n/)` would have left half-stripped in the outbound request.
+- The drift-test fixture needed `as Parameters<typeof serializeConversation>[0]` — `AssistantMessage` requires `api`, `provider`, `model`, and `usage` bookkeeping the serializer never reads.
+  Vitest passed without it; only `pnpm run check` caught it.
+- Pre-completion reviewer: PASS. No warnings.
