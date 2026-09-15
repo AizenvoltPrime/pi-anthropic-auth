@@ -96,6 +96,19 @@ function buildBillingHeaderValue(messages: MessageParam[]): string | undefined {
   ].join(" ");
 }
 
+/**
+ * Coerce a payload's `system` field into an array of text blocks.
+ *
+ * Anthropic accepts `system` as a bare string, an array of blocks, or nothing
+ * at all; callers that need to inspect or rewrite it want one shape.
+ */
+function normalizeSystemBlocks(system: unknown): TextBlock[] {
+  if (Array.isArray(system)) {
+    return system.map(normalizeSystemBlock);
+  }
+  return system == null ? [] : [normalizeSystemBlock(system)];
+}
+
 function normalizeSystemBlock(block: unknown): TextBlock {
   if (typeof block === "string") {
     return { type: "text", text: block };
@@ -121,11 +134,7 @@ function prependBillingHeader(
     return system;
   }
 
-  const systemBlocks = Array.isArray(system)
-    ? system.map(normalizeSystemBlock)
-    : system == null
-      ? []
-      : [normalizeSystemBlock(system)];
+  const systemBlocks = normalizeSystemBlocks(system);
 
   if (
     systemBlocks.some((block) =>
