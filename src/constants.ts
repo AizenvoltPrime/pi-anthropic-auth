@@ -41,6 +41,52 @@ export const MINIMAL_ANTHROPIC_OAUTH_PROMPT = [
 ].join("\n");
 
 // ---------------------------------------------------------------------------
+// Summarization transcript constants
+//
+// Pi's compaction, turn-prefix, and branch summarization paths all serialize
+// the conversation into a single user message: a `<conversation>` envelope
+// containing one paragraph per transcript part, joined by blank lines.  One of
+// those parts transcribes the assistant's thinking blocks as plain prose,
+// which Anthropic's `reasoning_extraction` classifier refuses under its
+// Terms of Service restriction on duplicating model outputs (Issue #65).
+//
+// The strings below are copied verbatim from Pi's `serializeConversation` and
+// `SUMMARIZATION_SYSTEM_PROMPT`, and are pinned against the installed Pi by
+// `test/upstream-prompt-drift.test.ts`.
+// ---------------------------------------------------------------------------
+
+/**
+ * Opening sentence of Pi's summarization system prompt.
+ *
+ * Used to recognize a summarization request, so transcript shaping never
+ * touches a user's own message.
+ */
+export const PI_SUMMARIZATION_SYSTEM_PROMPT_ANCHOR =
+  "You are a context summarization assistant.";
+
+/** Tags Pi wraps the serialized conversation in. */
+export const PI_CONVERSATION_ENVELOPE_OPEN = "<conversation>";
+export const PI_CONVERSATION_ENVELOPE_CLOSE = "</conversation>";
+
+/** Paragraph marker Pi emits for transcribed assistant thinking blocks. */
+export const PI_TRANSCRIPT_THINKING_MARKER = "[Assistant thinking]: ";
+
+/**
+ * Every paragraph marker `serializeConversation` emits, in emission order.
+ *
+ * Segment boundaries are recognized as a blank line followed by one of these,
+ * rather than as any blank line: a transcribed thinking block can itself
+ * contain blank lines, and splitting on those would orphan its tail.
+ */
+export const PI_TRANSCRIPT_MARKERS: readonly string[] = [
+  "[User]: ",
+  PI_TRANSCRIPT_THINKING_MARKER,
+  "[Assistant]: ",
+  "[Assistant tool calls]: ",
+  "[Tool result]: ",
+];
+
+// ---------------------------------------------------------------------------
 // Billing header constants
 //
 // These values are used to build the x-anthropic-billing-header injected into
