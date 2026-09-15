@@ -52,6 +52,7 @@ Before investigating the issue, load skills relevant to the change:
 4. Open the source files most relevant to the change and skim them before writing.
 5. When a bug report does not reproduce locally, dispatch `Explore` (`model: "sonnet-5"`) for the root-cause hunt instead of running it inline — a hunt that ends in "not determinable from the code" still costs this session's context, and the plan is written right after.
    Verifying a diagnosis the report already supplies (named files, a numbered source trace) is not that hunt — keep it inline, since what it establishes is the design's input.
+   A hunt that needs live execution — an authenticated API spike, a CLI repro, a variant table you iterate on — also stays inline; `Explore` is read-only and cannot run it.
 6. When the plan introduces a public API pattern (package `exports`, `Symbol.for()` accessor, service interface) or agent-facing message formatting (attribution tags, error prefixes, log labels), use colgrep or grep to search the codebase for the established convention and follow it unless there is a documented reason to diverge.
    When a config key or public field names an SDK/domain concept (a tool-call part, event, or content type), use the SDK's own term for it — verify against the SDK types — rather than adopting a term from the issue body verbatim.
    When the change introduces a mechanism a mature ecosystem already standardizes (log redaction, retry/backoff, caching, rate limiting), check what established libraries in that space actually do before building the `ask_user` option set — a set built only from first principles can omit the standard, lowest-maintenance choice.
@@ -178,6 +179,7 @@ Then an H1 title (e.g., `# <short descriptive title>`) — required by markdownl
   When a step removes a factory or export that has a single call site (e.g., `index.ts`), include the call-site update in the same step — the type checker will not allow them in separate commits.
   When a step removes an export (not just renames it), every importing module and its tests break at the type level in that commit — fold the extraction, all consumer updates, and all consumer-test updates into one step regardless of call-site count.
   When a step removes fields from an interface and a downstream file constructs an object literal satisfying that interface, include the call-site update in the same step — TypeScript's excess property checking rejects the stale fields immediately.
+  When a step adds a module no consumer references yet, suggest `refactor:`, not `feat:` — `cliff.toml` skips `refactor:`, so the changelog carries one entry for the change instead of two.
 - **Risks and Mitigations** — concrete risks and how the plan addresses each.
 - **Open Questions** — defer-until-needed items.
 

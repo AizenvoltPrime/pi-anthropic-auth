@@ -67,6 +67,7 @@ pi \
 ```
 
 This gives the shortest reliable feedback loop for live Anthropic OAuth behavior. Prefer the latest Haiku alias for fast repros unless the bug appears model-specific.
+A refusal or Terms-of-Service block is model-specific by definition — reproduce on the model named in the report, or on `claude-fable-5` when none is named.
 
 If an installed copy of this extension is listed in `~/.pi/agent/settings.json`, `-e <local path>` loads the local copy *in addition to* the installed one, so shaping appears to run twice.
 Add `--no-extensions` to the repro command to load only the `-e` copy when verifying local changes.
