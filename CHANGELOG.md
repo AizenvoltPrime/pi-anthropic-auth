@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.0.9](https://github.com/gotgenes/pi-anthropic-auth/compare/v2.0.8...v2.0.9) (2026-09-15)
+
+
+### Bug Fixes
+
+* strip transcribed reasoning from Anthropic OAuth summarization requests ([d2fdab8](https://github.com/gotgenes/pi-anthropic-auth/commit/d2fdab837549e500ec30e634ab87e61b7c2f3881)), closes [#65](https://github.com/gotgenes/pi-anthropic-auth/issues/65)
+
+### Documentation
+
+* **retro:** add retro notes for issue #64 ([e5c51a6](https://github.com/gotgenes/pi-anthropic-auth/commit/e5c51a647c0c111daf68128ccd335c3d6dd4c99b))
+* document transcribed-reasoning stripping for OAuth summarization ([4b2a070](https://github.com/gotgenes/pi-anthropic-auth/commit/4b2a0706e57a29d1cebbf69287649fb0de0ccd53))
+
 ## [2.0.8](https://github.com/gotgenes/pi-anthropic-auth/compare/v2.0.7...v2.0.8) (2026-09-04)
 
 
