@@ -121,6 +121,27 @@ Claude Code's `stable` release channel lags `latest`, so an installed copy is of
 If the version in the error message is **not** the one this package reports, the request is being rejected on Pi's own `user-agent: claude-cli/<version>`, which this extension does not control.
 That pin lives in Pi's `pi-ai` package and needs a Pi upgrade.
 
+### `/compact` fails with a Terms of Service message
+
+Compaction used to fail on Claude Fable models with:
+
+```text
+Compaction failed: Turn prefix summarization failed: This request was blocked as it seems to
+violate Anthropic's Terms of Service restrictions on reverse engineering or duplicating model
+outputs.
+```
+
+This is Anthropic's `reasoning_extraction` classifier, and the trigger is Pi, not your session.
+Pi's summarization paths serialize the conversation into a `<conversation>` transcript and transcribe the assistant's thinking blocks into it as plain prose, which is the pattern [Anthropic's Fable 5 guidance](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5) warns against.
+
+This extension removes those transcribed reasoning paragraphs from Anthropic OAuth summarization requests, so compaction succeeds.
+The visible trade-off is that compaction summaries no longer reflect the assistant's reasoning, only what it said and did.
+That is deliberate: relabeling or reframing the reasoning was measured and refused just the same, so removing it is the only mitigation that works.
+
+The rewrite is gated on Pi's own summarization system prompt, so an ordinary turn is never touched — including one where you paste a Pi transcript into chat.
+
+Compaction that runs inside a background agent still bypasses this extension entirely (see the call-path table in [`docs/architecture.md`](docs/architecture.md)) and can still hit the refusal.
+
 ### Docker: extension missing after volume mount
 
 If you install the extension at image build time with `RUN pi install npm:@gotgenes/pi-anthropic-auth` and then mount a persistent volume over `~/.pi/agent` at runtime, Docker may mask the build-time install.

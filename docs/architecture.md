@@ -90,8 +90,11 @@ This replaces the previous, brittle approach of sniffing system-prompt markers a
 For OAuth requests, the injected `onPayload` runs `shapeAnthropicOAuthPayload`, which:
 
 1. normalizes assistant message ordering when Pi serializes `[tool_use..., text]` for Anthropic,
-2. sanitizes Pi's default preamble by anchor (de-fingerprinting) — removing the identity, custom-tool filler, and Pi documentation paragraphs, replacing only the identity with a minimal neutral prompt, and preserving tool snippets, guidelines, and appended content — and
-3. prepends an `x-anthropic-billing-header` system block (without `cache_control`).
+2. sanitizes Pi's default preamble by anchor (de-fingerprinting) — removing the identity, custom-tool filler, and Pi documentation paragraphs, replacing only the identity with a minimal neutral prompt, and preserving tool snippets, guidelines, and appended content,
+3. removes transcribed assistant reasoning (`[Assistant thinking]` paragraphs) from the serialized `<conversation>` transcript on summarization requests, which Anthropic's `reasoning_extraction` classifier otherwise refuses, and
+4. prepends an `x-anthropic-billing-header` system block (without `cache_control`).
+
+Step 3 is gated on Pi's summarization system prompt, so it only ever rewrites a message Pi synthesized, and it runs before step 4 so the billing header's `cch` hash describes what is actually sent.
 
 The wrapper composes, rather than replaces, any caller-provided `onPayload`.
 On the main loop, Pi still passes its own `onPayload` (which fires other extensions' `before_provider_request` handlers); the wrapper runs those first and applies our shaping last, closest to the wire.
@@ -186,4 +189,5 @@ Upstream draws the same distinction: `agent-session.ts` branches on `this.agent.
 - `src/oauth-transport.ts` — the token-gated `streamSimple` wrapper.
 - `src/request-shaping.ts` — the shaping pipeline applied via `onPayload`.
 - `src/system-prompt-shaping.ts` — anchor-driven preamble sanitizer that preserves tool snippets, guidelines, and appended content.
+- `src/summarization-shaping.ts` — recognizes Pi's summarization requests and strips transcribed assistant reasoning from the serialized `<conversation>` transcript (Issue #65).
 - `src/diagnostics.ts` — `ExtensionDiagnostics` value object, `formatDiagnosticsReport`, and `createStatusCommandHandler`; surfaced by the `/anthropic-auth:status` command registered in `src/index.ts`.
