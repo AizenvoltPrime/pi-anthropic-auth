@@ -5,11 +5,23 @@ import {
   PARAGRAPH_REMOVAL_ANCHORS,
   PI_DEFAULT_PROMPT_PREFIX,
   PI_DEFAULT_PROMPT_TERMINATOR,
+  PI_TRANSCRIPT_THINKING_MARKER,
 } from "#src/constants";
+import {
+  isSummarizationSystemText,
+  stripTranscribedThinking,
+} from "#src/summarization-shaping";
 import {
   _resetShapingWarnings,
   shapeAnthropicOAuthSystemPrompt,
 } from "#src/system-prompt-shaping";
+// Same reasoning for the compaction internals: `serializeConversation` and
+// `SUMMARIZATION_SYSTEM_PROMPT` are what `src/constants.ts` copies its
+// transcript anchors from, so verifying against them *is* the drift check.
+import {
+  SUMMARIZATION_SYSTEM_PROMPT,
+  serializeConversation,
+} from "../node_modules/@earendil-works/pi-coding-agent/dist/core/compaction/utils.js";
 // `buildSystemPrompt` is not listed in pi's `exports` map, which declares only
 // `.`, `./rpc-entry`, and `./client`.  The bare subpath specifier is therefore
 // rejected by Node (ERR_PACKAGE_PATH_NOT_EXPORTED) and by vite's resolver
@@ -21,10 +33,11 @@ import { buildSystemPrompt } from "../node_modules/@earendil-works/pi-coding-age
 // ---------------------------------------------------------------------------
 // Upstream anchor drift check
 //
-// `src/constants.ts` holds five strings copied verbatim out of pi's default
-// system prompt.  Nothing else in the suite verifies they still match the
-// installed pi, so drift surfaces at request time — a `console.warn` on stderr
-// mid-session for the terminator, and silence for a removal anchor.
+// `src/constants.ts` holds strings copied verbatim out of pi's default system
+// prompt and out of its summarization transcript format.  Nothing else in the
+// suite verifies they still match the installed pi, so drift surfaces at
+// request time — a `console.warn` on stderr mid-session for the terminator, and
+// silence for a removal anchor or a transcript marker.
 //
 // This is the one file in the suite that deliberately imports a Pi internal
 // rather than building a fixture inline (see AGENTS.md Testing Guidance):
@@ -164,4 +177,46 @@ test("shaping the installed pi's prompt takes the terminator path", () => {
     "project context files must survive shaping",
   );
   assert.match(shaped, /\nCurrent working directory: \/tmp\/project$/);
+});
+
+test("the installed pi's summarization system prompt still matches our anchor", () => {
+  assert.ok(
+    isSummarizationSystemText(SUMMARIZATION_SYSTEM_PROMPT),
+    "PI_SUMMARIZATION_SYSTEM_PROMPT_ANCHOR no longer matches the installed pi's " +
+      "SUMMARIZATION_SYSTEM_PROMPT. Transcript shaping would never fire, and /compact " +
+      "would start failing with Anthropic's reasoning_extraction refusal again.",
+  );
+});
+
+test("the installed pi's serializer still emits the thinking marker we strip", () => {
+  // Pi's own serializer, not a fixture: a marker rename upstream must red here.
+  // The thinking block deliberately contains a blank line, which is why the
+  // stripper splits on marker-introduced boundaries rather than on any \n\n.
+  // `serializeConversation` reads only `role` and `content`; the cast supplies
+  // the AssistantMessage provider/usage bookkeeping it never looks at.
+  const transcript = serializeConversation([
+    { role: "user", content: [{ type: "text", text: "Refactor the parser." }] },
+    {
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "Reason A.\n\nReason B." },
+        { type: "text", text: "Reading the file." },
+      ],
+    },
+  ] as Parameters<typeof serializeConversation>[0]);
+
+  assert.ok(
+    transcript.includes(PI_TRANSCRIPT_THINKING_MARKER),
+    "PI_TRANSCRIPT_THINKING_MARKER no longer appears in the installed pi's " +
+      "serializeConversation output. Re-verify the constant.",
+  );
+
+  const report = stripTranscribedThinking(
+    `<conversation>\n${transcript}\n</conversation>\n\nSummarize the conversation above.`,
+  );
+
+  assert.equal(report.removedSegments, 1);
+  assert.doesNotMatch(report.text, /Reason A\.|Reason B\./);
+  assert.match(report.text, /\[User\]: Refactor the parser\./);
+  assert.match(report.text, /\[Assistant\]: Reading the file\./);
 });
