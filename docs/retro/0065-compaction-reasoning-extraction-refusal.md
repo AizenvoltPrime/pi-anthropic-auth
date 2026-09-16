@@ -139,8 +139,9 @@ Re-checking upstream state immediately before submitting, not at planning time, 
 
 The upstream report was filed as [earendil-works/pi#9652](https://github.com/earendil-works/pi/issues/9652), auto-closed on filing by the new-contributor bot with `bug` + `untriaged`.
 
-Before filing, an attempt to answer "does this also affect Claude Fable 5.1?" produced a more consequential result: **the Fable 5 repro stopped reproducing.**
-The measured sequence:
+Before filing, an attempt to answer "does this also affect Claude Fable 5.1?" appeared to produce a more consequential result: the Fable 5 repro seemed to stop reproducing.
+The diagnosis recorded below was wrong — see the correction that follows this subsection.
+The measured sequence as observed at the time:
 
 1. A first Fable 5.1 probe returned `end_turn` with thinking present — but that run used a trimmed prompt and shortened reasoning strings, so it could not have detected the effect.
    Reporting it would have been a false negative.
@@ -150,16 +151,44 @@ The measured sequence:
 3. Four Fable 5.1 calls (`respModel` echoed as `claude-fable-5-1`) all returned `end_turn`.
    Worthless as evidence while the positive control is negative.
 
-Most likely explanation: Anthropic retuned the classifier server-side within ~24 hours, consistent with the false-positive regression reports found during planning (`anthropics/claude-code` #88364, #90922).
-Not excluded: account- or time-dependent classifier routing.
+At the time, the conclusion drawn was "Anthropic retuned the classifier server-side within ~24 hours," citing the false-positive regression reports found during planning (`anthropics/claude-code` #88364, #90922).
 
-Consequences worth carrying forward:
+**That conclusion was wrong, and the correction is the most instructive part of this issue.**
 
-- The shipped fix is not invalidated — yesterday's refusal was real and measured, and the strip is inert when the classifier is quiet.
-- The Fable 5.1 question remains **unanswered**, and stays unanswerable until the refusal resurfaces.
-  If it does, measure 5 and 5.1 in one run.
-- #9652's "Steps to reproduce" may not fire for a maintainer attempting it today.
+### Correction: the non-reproduction was self-inflicted (2026-09-16)
 
-The transferable lesson is the one from step 1: **a negative result is only as good as its positive control.**
-The first 5.1 probe was one tool call away from being reported as a finding, and only the control distinguished "5.1 is immune" from "this harness detects nothing."
-Any future probe of a probabilistic, vendor-side behavior should carry a known-positive row in the same run.
+The operator asked whether our own extension could explain the non-reproduction.
+It could, and it did.
+
+The spike called `createAnthropicOAuthStreamSimple(builtin)` — the wrapper — and sent a payload carrying `SUMMARIZATION_SYSTEM_PROMPT` plus a `<conversation>` envelope.
+That is exactly the shape the strip shipped hours earlier is built to catch, so every "WITH thinking" variant had its thinking removed **inside our own wrapper** before the request left the process.
+The 2026-09-14 spike used the same wrapper, but the strip did not exist yet, so the identical call was a passthrough.
+In short: the fix was measured working and misread as the vendor going quiet.
+
+Re-measured correctly, in one run:
+
+| Variant | Result |
+| --- | --- |
+| `claude-fable-5`, unwrapped, thinking | `refusal` — control restored |
+| `claude-fable-5`, wrapped (fix live), thinking | `end_turn` |
+| `claude-fable-5`, wrapped, strip gate bypassed, thinking | `refusal` |
+| `claude-fable-5-1`, wrapped, strip gate bypassed, thinking | `refusal` |
+| `claude-fable-5-1`, same, thinking removed | `end_turn` |
+
+Outcomes:
+
+- **Fable 5.1 is affected**, so the assumption behind the upstream filing holds.
+- **#9652's repro is sound**; the recommendation to hold a clarifying comment is withdrawn.
+- The wrapped-vs-unwrapped pair on Fable 5 is the **first live proof the shipped fix prevents the refusal** — the suite only ever pinned the payload transformation.
+- Fable 5.1 is untestable on the unwrapped transport: pi's `claude-cli/2.1.75` user-agent trips `claude_code_version_too_old` (Issue #60) before any classifier runs, and this extension's `cc_version` header is what satisfies the floor.
+
+### Lessons
+
+1. **A positive control must sit on the same side of the system under test as the measurement.**
+   The control here was correctly placed for "does the classifier still fire" and useless for "does it fire on 5.1," because our own strip was upstream of both.
+   This is a sharper statement of the lesson drafted an hour earlier — which was itself written one paragraph before the same trap was walked into.
+2. **A negative result is only as good as its positive control.**
+   The first 5.1 probe used a trimmed prompt and shortened reasoning strings and would have been reported as "5.1 is immune" had the control not been there.
+3. **Prefer a self-inflicted explanation over a vendor-side one.**
+   "Anthropic retuned the classifier" was plausible, had supporting citations, and required nothing of us — which is precisely why it should have drawn more suspicion than it did.
+   The operator's question, not the agent's own review, is what reopened it.

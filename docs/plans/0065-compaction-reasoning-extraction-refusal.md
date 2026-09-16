@@ -121,6 +121,25 @@ Two conclusions drive the design:
 A short transcript (one thinking paragraph, six segments) passed in the same run, so the trigger is volume-dependent.
 That matches the issue's "fill up the context" precondition and means a test cannot assert the refusal — only the payload transformation.
 
+#### Post-ship verification (2026-09-16)
+
+A second spike, run after the fix shipped, confirms the refusal end-to-end and extends the finding to Claude Fable 5.1.
+Same transcript and same turn-prefix prompt as above.
+
+| Variant | Result |
+| --- | --- |
+| `claude-fable-5`, unwrapped transport, thinking present | `refusal` — the 2026-09-14 control, reproduced |
+| `claude-fable-5`, **wrapped (shipped fix live)**, thinking present | `end_turn` |
+| `claude-fable-5`, wrapped with the strip gate bypassed, thinking present | `refusal` |
+| `claude-fable-5-1`, wrapped with the strip gate bypassed, thinking present | `refusal` |
+| `claude-fable-5-1`, same, thinking removed | `end_turn` |
+
+Three things this establishes that the first spike did not:
+
+1. **Claude Fable 5.1 refuses too.** Anthropic's release note scopes `reasoning_extraction` to Fable 5, but 5.1 behaves identically here, so the mitigation is not a single-model workaround.
+2. **The shipped fix prevents the refusal in a live request.** Row 2 is the same payload as row 1 with only the wrapper interposed. The test suite pins the payload transformation; this pins the outcome.
+3. **Fable 5.1 cannot be tested unwrapped.** Pi's own `claude-cli/2.1.75` user-agent trips `claude_code_version_too_old` (Issue [#60]) before any classifier runs, and it is this extension's `cc_version` billing header that satisfies the floor. So the unshaped control available for Fable 5 is impossible for 5.1 on pi 0.85.1 — the strip gate has to be defeated instead (a one-character case change to the system prompt, leaving the text semantically identical; the Fable 5 row using the same bypass still refuses, which confirms the bypass does not alter what the classifier sees).
+
 ### Decision model
 
 Shaping applies when **both** anchors are present:
