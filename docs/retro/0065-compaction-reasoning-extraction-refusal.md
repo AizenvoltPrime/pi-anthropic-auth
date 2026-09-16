@@ -134,3 +134,32 @@ Proposal D (sharpening `/plan-issue` step 6 to require citing the primary source
 The broader lesson: a planning-stage tracker search has a shelf life.
 This one was four hours old and the single most load-bearing fact in it — "upstream has no live issue on this code path" — had already flipped.
 Re-checking upstream state immediately before submitting, not at planning time, is what caught it.
+
+### Upstream filing and a failed reproduction (2026-09-16)
+
+The upstream report was filed as [earendil-works/pi#9652](https://github.com/earendil-works/pi/issues/9652), auto-closed on filing by the new-contributor bot with `bug` + `untriaged`.
+
+Before filing, an attempt to answer "does this also affect Claude Fable 5.1?" produced a more consequential result: **the Fable 5 repro stopped reproducing.**
+The measured sequence:
+
+1. A first Fable 5.1 probe returned `end_turn` with thinking present — but that run used a trimmed prompt and shortened reasoning strings, so it could not have detected the effect.
+   Reporting it would have been a false negative.
+   Adding a Fable 5 positive control is what caught the flaw.
+2. With the payload restored verbatim (pi's exact `TURN_PREFIX_SUMMARIZATION_PROMPT`, the original reasoning strings, same model, same harness), the Fable 5 control **still** returned `end_turn` — 3/3, including at 3x volume (90 reasoning paragraphs).
+   Yesterday the identical 30-paragraph payload refused 2/2, shaped and unshaped.
+3. Four Fable 5.1 calls (`respModel` echoed as `claude-fable-5-1`) all returned `end_turn`.
+   Worthless as evidence while the positive control is negative.
+
+Most likely explanation: Anthropic retuned the classifier server-side within ~24 hours, consistent with the false-positive regression reports found during planning (`anthropics/claude-code` #88364, #90922).
+Not excluded: account- or time-dependent classifier routing.
+
+Consequences worth carrying forward:
+
+- The shipped fix is not invalidated — yesterday's refusal was real and measured, and the strip is inert when the classifier is quiet.
+- The Fable 5.1 question remains **unanswered**, and stays unanswerable until the refusal resurfaces.
+  If it does, measure 5 and 5.1 in one run.
+- #9652's "Steps to reproduce" may not fire for a maintainer attempting it today.
+
+The transferable lesson is the one from step 1: **a negative result is only as good as its positive control.**
+The first 5.1 probe was one tool call away from being reported as a finding, and only the control distinguished "5.1 is immune" from "this harness detects nothing."
+Any future probe of a probabilistic, vendor-side behavior should carry a known-positive row in the same run.

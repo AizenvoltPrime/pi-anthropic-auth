@@ -319,6 +319,10 @@ No follow-up issues are filed by this plan: every deferral above is either a rev
 
 ## Appendix: drafted upstream bug report
 
+**Filed 2026-09-16 as [earendil-works/pi#9652](https://github.com/earendil-works/pi/issues/9652)** — "Compaction is refused by Anthropic Claude Fable because of transcribed thinking blocks".
+Auto-closed by the new-contributor bot on filing (`bug`, `untriaged`); maintainers review that queue daily, and [#9602] took the same path before being reopened.
+The draft below is retained as the record of what was submitted.
+
 For submission by the operator at <https://github.com/earendil-works/pi/issues/new?template=bug.yml>, in their own voice and by hand.
 Pi's `CONTRIBUTING.md` asks for one screen, the operator's own words, and prior validation with `pi -ne` that the bug is not extension-caused — which the unshaped control row above supplies.
 
@@ -375,3 +379,4 @@ Omitting them unconditionally would also subsume #9602's option 1 and shrink eve
 [#52]: https://github.com/gotgenes/pi-anthropic-auth/issues/52
 [#60]: https://github.com/gotgenes/pi-anthropic-auth/issues/60
 [#65]: https://github.com/gotgenes/pi-anthropic-auth/issues/65
+[#9602]: https://github.com/earendil-works/pi/issues/9602
