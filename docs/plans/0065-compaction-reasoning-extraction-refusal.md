@@ -322,9 +322,12 @@ No follow-up issues are filed by this plan: every deferral above is either a rev
 For submission by the operator at <https://github.com/earendil-works/pi/issues/new?template=bug.yml>, in their own voice and by hand.
 Pi's `CONTRIBUTING.md` asks for one screen, the operator's own words, and prior validation with `pi -ne` that the bug is not extension-caused — which the unshaped control row above supplies.
 
+Drafted against pi v0.85.1 and revised after pi #9602 was reopened and labeled `bug` on 2026-09-15.
+That issue reports a second failure mode on the same line (`utils.ts:133`), so leading with the relationship is what keeps this from reading as a duplicate — and citing a live maintainer-triaged issue is the strongest available defense against the new-contributor auto-close.
+
 ### What happened?
 
-Compaction fails on `claude-fable-5` because `serializeConversation` transcribes thinking blocks into the summarization prompt, which Anthropic's `reasoning_extraction` classifier refuses:
+`/compact` fails on `claude-fable-5` because `serializeConversation` transcribes thinking blocks into the summarization prompt, which Anthropic's `reasoning_extraction` classifier refuses:
 
 ```text
 Compaction failed: Turn prefix summarization failed: This request was blocked as it seems to
@@ -332,15 +335,19 @@ violate Anthropic's Terms of Service restrictions on reverse engineering or dupl
 outputs.
 ```
 
-`serializeConversation` emits `[Assistant thinking]: <reasoning text>` for every assistant turn with thinking, and compaction sends that transcript as a user message.
-Anthropic's Fable 5 guidance says not to do this:
+This is the same line as #9602 — [`utils.ts:133`](https://github.com/earendil-works/pi/blob/v0.85.1/packages/coding-agent/src/core/compaction/utils.ts#L133) — but a different failure: that issue is about the summary request overflowing the context budget, this one is about Anthropic refusing it outright.
+
+**The fix proposed there would not fix this.** #9602's option 1 omits thinking only from messages the request converter already skips (no text, no tool calls). The refusal is triggered by thinking transcribed from *ordinary* assistant messages that do have text and tool calls, so those paragraphs survive that fix and the block still happens.
+
+Anthropic's Fable 5 guidance names this shape directly:
 
 > Prompts, skills, or harness instructions that tell the model to echo, transcribe, or explain its internal reasoning as response text can trigger the `reasoning_extraction` refusal category on Claude Fable 5.
 
 (<https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5>, "Recommended scaffolding changes")
 
-I confirmed this is core, not an extension: sending the same payload through pi-ai's built-in Anthropic transport with no extension loaded gets the identical refusal.
-Sending it with the `[Assistant thinking]` paragraphs removed and nothing else changed succeeds and returns a normal summary.
+I confirmed it is core, not an extension: the same payload through pi-ai's built-in Anthropic transport with no extension loaded gets the identical refusal.
+Removing the `[Assistant thinking]` paragraphs and changing nothing else makes the same request succeed and return a normal summary.
+Relabeling the marker (`[Assistant notes]:`) does not help — the classifier reads the prose, not the label.
 
 ### Steps to reproduce
 
@@ -352,12 +359,14 @@ It is volume-dependent — a handful of thinking paragraphs passes, a few dozen 
 
 ### Expected behavior
 
-Compaction succeeds. `serializeConversation` omits thinking blocks, or replaces them with a content-free marker.
-Thinking text is the lowest-value part of a summarization input, and dropping it also shrinks the request, which would help pi #9602.
+Compaction succeeds.
+`serializeConversation` omits thinking blocks entirely, or replaces them with a content-free marker.
+
+Omitting them unconditionally would also subsume #9602's option 1 and shrink every summarization request, so one change closes both issues.
 
 ### Version
 
-0.84.0 (also present on `main`; `packages/agent/src/harness/compaction/utils.ts`)
+0.85.1 (`packages/coding-agent/src/core/compaction/utils.ts:133`)
 
 [#1]: https://github.com/gotgenes/pi-anthropic-auth/issues/1
 [#10]: https://github.com/gotgenes/pi-anthropic-auth/issues/10

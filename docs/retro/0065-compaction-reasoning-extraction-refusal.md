@@ -122,3 +122,15 @@ Test count went 64 → 78; the changelog carries exactly one `fix:` line.
 3. `.pi/skills/anthropic/SKILL.md` — extended the live-repro model guidance: a refusal or Terms-of-Service block is model-specific by definition, so reproduce on the model named in the report, or `claude-fable-5` when none is named.
 
 Proposal D (sharpening `/plan-issue` step 6 to require citing the primary source rather than a search result quoting it) was presented and declined — the underlying rule already exists in that step.
+
+### Post-retro addendum (2026-09-15)
+
+4. `docs/plans/0065-compaction-reasoning-extraction-refusal.md` — revised the upstream bug-report appendix.
+   A re-check of `earendil-works/pi` before submission found pi #9602 had been **reopened by a maintainer and labeled `bug`** since planning, where it was recorded as `CLOSED`/`NOT_PLANNED` under the new-contributor auto-close.
+   Its reporter also proposed fixes citing the exact line this issue works around, `utils.ts:133` at `v0.85.1`.
+   The draft now leads with that relationship, states why #9602's proposed fix does not cover this refusal (it omits thinking only from messages that carry no text or tool calls, whereas the refusal is triggered by thinking on ordinary assistant messages), and notes that omitting thinking unconditionally would subsume both issues.
+   The `Version` field moved from `0.84.0` to `0.85.1` — the pinned devDep here is 0.84.0 but the running CLI is 0.85.1, and 0.85.1 is the version whose line number the draft cites.
+
+The broader lesson: a planning-stage tracker search has a shelf life.
+This one was four hours old and the single most load-bearing fact in it — "upstream has no live issue on this code path" — had already flipped.
+Re-checking upstream state immediately before submitting, not at planning time, is what caught it.
