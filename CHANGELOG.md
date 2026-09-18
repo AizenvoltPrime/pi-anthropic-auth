@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.0.10](https://github.com/gotgenes/pi-anthropic-auth/compare/v2.0.9...v2.0.10) (2026-09-18)
+
+
+### Reverts
+
+* remove the summarization transcript stripper ([d3a56db](https://github.com/gotgenes/pi-anthropic-auth/commit/d3a56dbe6ed085747b48396095346d46c48988bc)), closes [#65](https://github.com/gotgenes/pi-anthropic-auth/issues/65)
+
+### Documentation
+
+* **retro:** add retro notes for issue #65 ([054e49a](https://github.com/gotgenes/pi-anthropic-auth/commit/054e49a7c6c595df1f6ebb65ba4796fff767f60c))
+* describe the real compaction refusal and drop the stripper's claims ([0c9ea28](https://github.com/gotgenes/pi-anthropic-auth/commit/0c9ea28873d30050f8d6c11229c59e6e6efd198c)), closes [#65](https://github.com/gotgenes/pi-anthropic-auth/issues/65)
+
 ## [2.0.9](https://github.com/gotgenes/pi-anthropic-auth/compare/v2.0.8...v2.0.9) (2026-09-15)
 
 
