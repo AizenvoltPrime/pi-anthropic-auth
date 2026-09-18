@@ -6,10 +6,6 @@ import {
   resolveClaudeCodeVersion,
 } from "./constants";
 import { debugLog, isToolUseOnlyDebugEnabled } from "./debug";
-import {
-  isSummarizationSystemText,
-  stripTranscribedThinking,
-} from "./summarization-shaping";
 import { shapeSystemBlocks } from "./system-prompt-shaping";
 
 type TextBlock = {
@@ -225,48 +221,6 @@ function getToolUseNames(messages: MessageParam[]): string[] {
   });
 }
 
-/**
- * Remove transcribed assistant reasoning from every user text block.
- *
- * Only called for summarization requests, which Pi synthesizes from a single
- * user message holding the serialized conversation (Issue #65).
- */
-function stripThinkingFromUserMessages(messages: MessageParam[]): {
-  messages: MessageParam[];
-  removedThinkingSegments: number;
-} {
-  let removedThinkingSegments = 0;
-
-  const stripped = messages.map((message) => {
-    if (message.role !== "user") {
-      return message;
-    }
-
-    if (typeof message.content === "string") {
-      const report = stripTranscribedThinking(message.content);
-      removedThinkingSegments += report.removedSegments;
-      return { ...message, content: report.text };
-    }
-
-    if (!Array.isArray(message.content)) {
-      return message;
-    }
-
-    const content = message.content.map((block) => {
-      if (block.type !== "text" || typeof block.text !== "string") {
-        return block;
-      }
-      const report = stripTranscribedThinking(block.text);
-      removedThinkingSegments += report.removedSegments;
-      return { ...block, text: report.text };
-    });
-
-    return { ...message, content };
-  });
-
-  return { messages: stripped, removedThinkingSegments };
-}
-
 function countAssistantMessages(messages: MessageParam[]): number {
   return messages.filter((message) => message.role === "assistant").length;
 }
@@ -295,14 +249,7 @@ export function shapeAnthropicOAuthPayload(payload: unknown): unknown {
   }
 
   const messages = payload.messages as MessageParam[];
-  const { messages: transcriptMessages, removedThinkingSegments } =
-    normalizeSystemBlocks(payload.system).some((block) =>
-      isSummarizationSystemText(block.text),
-    )
-      ? stripThinkingFromUserMessages(messages)
-      : { messages, removedThinkingSegments: 0 };
-  const normalizedMessages =
-    splitAssistantToolUseTrailingContent(transcriptMessages);
+  const normalizedMessages = splitAssistantToolUseTrailingContent(messages);
 
   const shapedSystem = Array.isArray(payload.system)
     ? shapeSystemBlocks(payload.system as TextBlock[])
@@ -326,7 +273,6 @@ export function shapeAnthropicOAuthPayload(payload: unknown): unknown {
       toolDefinitions: getToolDefinitionNames(payload),
       toolUseNamesBefore,
       toolUseNamesAfter,
-      removedThinkingSegments,
     });
   }
 
