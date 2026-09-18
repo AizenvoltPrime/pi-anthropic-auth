@@ -34,7 +34,6 @@ compatibility: Intended for the pi-anthropic-auth repository and Pi Anthropic OA
 - The billing block must not add `cache_control`, or Anthropic can reject the request for exceeding the cache-control block limit.
 - Assistant message ordering must be normalized when Pi serializes `[tool_use..., text]` for Anthropic.
 - Pi's default system prompt can act as an Anthropic fingerprint and trigger disguised rejection errors.
-- Pi's summarization paths transcribe assistant thinking blocks into the `<conversation>` prompt, which Anthropic's `reasoning_extraction` classifier refuses with a Terms of Service message about duplicating model outputs (Issue #65). Measured: relabeling the marker is refused identically, so the reasoning prose itself has to be removed.
 - Shaping runs in a thin `streamSimple` transport wrapper (delegating to Pi's built-in Anthropic transport, resolved from the installed pi-ai layout), gated on the `sk-ant-oat` token.
 - The wrapper covers the main loop and compaction — everything that dispatches through `modelRuntime`.
 - On pi >=0.80.8, `agentLoop` background agents and extensions calling pi-ai's `compat.streamSimple` directly are confirmed uncovered, and cannot be covered from this extension (Issue #46); see `docs/architecture.md` for why, and for the `agent.streamFunction` workaround.
@@ -105,7 +104,6 @@ All request shaping runs in the transport wrapper (`src/oauth-transport.ts`), wh
 - cache-control adjustments
 - assistant message ordering normalization
 - system prompt de-fingerprinting (anchor-based removal of the Pi identity, custom-tool filler, and Pi documentation paragraphs; preserves tool snippets, guidelines, and appended content)
-- summarization transcript stripping (removal of `[Assistant thinking]` paragraphs from the serialized `<conversation>` transcript, gated on Pi's summarization system prompt)
 
 Gate on the `sk-ant-oat` access-token prefix (`options.apiKey`), the same signal Pi uses internally.
 This covers the main loop and compaction; `agentLoop` background agents are confirmed uncovered on pi >=0.80.8 and are out of reach from here (Issue #46).
@@ -135,7 +133,6 @@ Do not "fix" that by calling `registerApiProvider` — the registry is keyed by 
 - `src/diagnostics.ts`
 - `src/oauth-transport.ts`
 - `src/request-shaping.ts`
-- `src/summarization-shaping.ts`
 - `src/system-prompt-shaping.ts`
 - `test/pi-anthropic-ordering-experiment.test.ts`
 - `test/system-prompt-shaping.test.ts`

@@ -36,8 +36,7 @@ The current implementation does the following:
 2. Wraps Pi's built-in Anthropic transport to shape OAuth requests on every call path that reaches `provider-composer` (main loop and compaction; not `agentLoop` background agents — see Issue #46)
 3. Prepends an Anthropic billing/content-consistency header block to `system[]`
 4. Sanitizes Pi's default preamble by anchor during the same shaping pass — removing the Pi identity, custom-tool filler, and Pi documentation paragraphs and replacing only the identity with a minimal neutral prompt — while preserving tool snippets, guidelines, and appended extension content
-5. Strips transcribed assistant reasoning (`[Assistant thinking]` paragraphs) out of the serialized `<conversation>` transcript on summarization requests, which Anthropic's `reasoning_extraction` classifier otherwise refuses (Issue #65)
-6. Gates all shaping on the `sk-ant-oat` OAuth access-token prefix, so API-key and non-Anthropic requests pass through untouched
+5. Gates all shaping on the `sk-ant-oat` OAuth access-token prefix, so API-key and non-Anthropic requests pass through untouched
 
 It wraps, but does not reimplement, Pi's built-in Anthropic streaming transport.
 The wrapper delegates to Pi's own built-in Anthropic `streamSimple` transport and only injects an `onPayload` shaping step.
@@ -98,9 +97,8 @@ Current source layout:
 3. `src/oauth-transport.ts`: token-gated `streamSimple` wrapper that applies shaping on every Anthropic call path reaching `provider-composer` (Issue #46)
 4. `src/request-shaping.ts`: Anthropic OAuth request shaping helpers
 5. `src/system-prompt-shaping.ts`: anchor-driven Anthropic OAuth prompt sanitizer that replaces Pi's identity paragraph and preserves tool snippets, guidelines, and appended content
-6. `src/summarization-shaping.ts`: recognizes Pi's summarization requests and strips transcribed assistant reasoning from the serialized `<conversation>` transcript
-7. `src/debug.ts`: opt-in structured debug logging for live OAuth repros
-8. `src/diagnostics.ts`: `ExtensionDiagnostics` value object, formatter, and handler factory for the `/anthropic-auth:status` command
+6. `src/debug.ts`: opt-in structured debug logging for live OAuth repros
+7. `src/diagnostics.ts`: `ExtensionDiagnostics` value object, formatter, and handler factory for the `/anthropic-auth:status` command
 
 ### Project Skills
 
@@ -416,9 +414,8 @@ Current suites map roughly to:
 1. `test/oauth-transport.test.ts` — `sk-ant-oat` token gating, `onPayload` composition, and delegation to the built-in transport.
 2. `test/request-shaping.test.ts` — billing header injection, system block layering, beta-header merging, and the structural messages-payload guard.
 3. `test/system-prompt-shaping.test.ts` — anchor-based paragraph removal, tool-snippet and guideline preservation, appended-content preservation, the verbatim upstream-prompt fixture, and degraded-mode fallbacks.
-4. `test/summarization-shaping.test.ts` — summarization system-prompt recognition, transcript segment removal (including multi-paragraph and trailing thinking blocks), and envelope-boundary preservation.
-5. `test/pi-anthropic-ordering-experiment.test.ts` — pinned experiments documenting Pi's tool-use serialization behavior.
-6. `test/upstream-prompt-drift.test.ts` — the preamble anchors in `src/constants.ts` checked against the installed Pi's own `buildSystemPrompt` output, the summarization anchors checked against Pi's own `SUMMARIZATION_SYSTEM_PROMPT` and `serializeConversation`, plus a pin that shaping still resolves the span from the terminator rather than the degraded fallback.
+4. `test/pi-anthropic-ordering-experiment.test.ts` — pinned experiments documenting Pi's tool-use serialization behavior.
+5. `test/upstream-prompt-drift.test.ts` — the preamble anchors in `src/constants.ts` checked against the installed Pi's own `buildSystemPrompt` output, plus a pin that shaping still resolves the span from the terminator rather than the degraded fallback.
 
 Priority areas for new tests:
 

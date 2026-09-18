@@ -123,24 +123,19 @@ That pin lives in Pi's `pi-ai` package and needs a Pi upgrade.
 
 ### `/compact` fails with a Terms of Service message
 
-Compaction used to fail on Claude Fable models with:
-
 ```text
 Compaction failed: Turn prefix summarization failed: This request was blocked as it seems to
 violate Anthropic's Terms of Service restrictions on reverse engineering or duplicating model
 outputs.
 ```
 
-This is Anthropic's `reasoning_extraction` classifier, and the trigger is Pi, not your session.
-Pi's summarization paths serialize the conversation into a `<conversation>` transcript and transcribe the assistant's thinking blocks into it as plain prose, which is the pattern [Anthropic's Fable 5 guidance](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5) warns against.
+This is Anthropic's `reasoning_extraction` classifier, and **this extension does not fix it.**
 
-This extension removes those transcribed reasoning paragraphs from Anthropic OAuth summarization requests, so compaction succeeds.
-The visible trade-off is that compaction summaries no longer reflect the assistant's reasoning, only what it said and did.
-That is deliberate: relabeling or reframing the reasoning was measured and refused just the same, so removing it is the only mitigation that works.
+Measured cause: pi's turn-prefix summarization prompt asserts "This is the PREFIX of a turn that was too large to keep" while sending a transcript of only a few hundred characters, mostly model output.
+On `claude-fable-5-1` that combination is refused; it fades out above roughly 3,000 characters of transcript and does not occur on `claude-fable-5`, nor with pi's full compaction prompt.
 
-The rewrite is gated on Pi's own summarization system prompt, so an ordinary turn is never touched — including one where you paste a Pi transcript into chat.
-
-Compaction that runs inside a background agent still bypasses this extension entirely (see the call-path table in [`docs/architecture.md`](docs/architecture.md)) and can still hit the refusal.
+The fix belongs upstream — tracked at [earendil-works/pi#9652](https://github.com/earendil-works/pi/issues/9652) and [#65](https://github.com/gotgenes/pi-anthropic-auth/issues/65).
+As a workaround, compact on a different model, or avoid the turn-prefix path by compacting before a single turn grows large enough to be split.
 
 ### Docker: extension missing after volume mount
 
