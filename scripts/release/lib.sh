@@ -10,6 +10,13 @@
 # is not a released change. Under release-please they were not excluded at all,
 # which is why v2.0.5 and v2.0.6 shipped no code.
 #
+# `.pi/` is excluded on the same rule. The tracked content there — skills,
+# prompts, and agents — is this repository's own workflow toolkit: absent from
+# package.json `files`, so a `.pi`-only bump would publish a byte-identical
+# tarball, and invisible to users either way.
+# `pi-packages` carries no equivalent entry because it tracks nothing under
+# `packages/*/.pi/`; the divergence is a layout difference, not a policy one.
+#
 # `docs/` itself stays included — architecture.md, comparison-to-similar-projects.md,
 # and the two builtin-transport-seam-*.md files are shipped reference docs.
 #
@@ -24,6 +31,7 @@ CLIFF_EXCLUDED_PATHS=(
   "CHANGELOG.md"
   "docs/plans/**"
   "docs/retro/**"
+  ".pi/**"
 )
 
 # Populate the global array CLIFF_ARGS with the scoping flags for git-cliff.
