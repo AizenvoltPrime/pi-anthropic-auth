@@ -245,3 +245,69 @@ All rows n=5 independent trials, per-trial nonce defeating Anthropic's prompt ca
 
 [pi#9652]: https://github.com/earendil-works/pi/issues/9652
 [#9602]: https://github.com/earendil-works/pi/issues/9602
+
+## Stage: Final Retrospective — post-correction (2026-09-18T05:48:00Z)
+
+### Session summary
+
+This issue ran a complete plan → TDD → ship → release cycle on a diagnosis that was false, then a second cycle to undo it.
+`v2.0.9` shipped a fix for a non-existent mechanism; `v2.0.10` reverted it via `git revert` of all five commits, leaving a tree byte-identical to the pre-fix state.
+Issue [#65] is reopened and honestly described, [pi#9652] is corrected upstream, and the measurement discipline that would have prevented all of it now lives in the `anthropic` skill.
+
+### Observations
+
+#### What went well
+
+- **The correction cost less than the error.** Once the premise collapsed, `git revert` of five commits applied with zero conflicts and produced a provably identical tree (`git diff a9e3255 -- src/ test/` empty). Small, well-typed, single-purpose commits are what made a clean unwind possible — the TDD discipline paid off precisely when the work it produced turned out to be wrong.
+- **The plan and retro were preserved, not rewritten.** Corrections are appended and a superseded banner added; the original reasoning stays legible. A future reader can see what was believed, why, and what falsified it.
+- **Declining the second mitigation held the line.** The measured prompt-substitution workaround (0/5 refusals) was real and tempting. It was declined on the same scope argument that killed the strip, rather than on the strip's outcome — the principle survived contact with a case where it cost something.
+
+#### What caused friction (agent side)
+
+1. `missing-context` — the entire diagnosis rested on a `<conversation>` fixture written by hand to imitate `serializeConversation`, never on its real output.
+   Impact: the largest in this repo's history. A plan, six TDD commits, a release, an upstream issue, a close comment, and four documentation surfaces, all wrong; two further releases to undo.
+2. `rabbit-hole` — six rounds of spikes refined the fixture rather than questioning it.
+   Each round added rigor (restored verbatim prompts, positive controls, cache nonces, replication) and none asked whether the object under test was real.
+   Impact: hours of measurement that could not have reached the right answer.
+3. `other` — sunk-cost reasoning after the premise fell.
+   "Keep the code, correct the rationale" was offered with a guideline-adherence justification that does not survive reading the guidance: Anthropic's text governs instructing a model to *emit* reasoning, while pi passes prior reasoning as *input*, which preserved thinking explicitly supports.
+   Impact: no rework — the operator named it as sunk cost and it was withdrawn — but it would have left false rationale in `AGENTS.md` permanently.
+4. `other` — a hand-edited revert, begun before `git revert` was considered.
+   Impact: caught by the operator and discarded; roughly ten wasted tool calls.
+5. `instruction-violation` (self-identified, twice; user-caught, once) — `git reset --hard` destroyed an uncommitted `lib.sh` edit, and the resulting version number was nearly reported as evidence the change had failed.
+   Impact: one redo, no lasting damage.
+6. `premature-convergence` — assumed the `.pi/**` exclusion would match `pi-packages` without checking, then was wrong twice in a row about what `pi-packages` actually does (it excludes more doc dirs; it tracks nothing under `packages/*/.pi/` at all).
+   Impact: none — the operator asked for the comparison before anything landed.
+
+#### What caused friction (user side)
+
+Every one of the four turning points came from an operator question, not from agent self-review:
+
+1. "Is it possible we're not able to reproduce it because of changes to our own extension?" — found the fix contaminating its own measurement.
+2. "Are we forcing content that can only be produced artificially?" — collapsed the diagnosis.
+3. "Isn't keeping it really Sunk Cost Fallacy?" — stopped a false rationale from being institutionalized.
+4. "Aren't you manually reverting instead of using git operations?" — replaced an unauditable edit with a verifiable one.
+
+The pattern in all four: a short, non-directive question aimed at an assumption, not a correction of output.
+That is a markedly higher-yield intervention than reviewing what the agent produced, and it is worth doing earlier and more often.
+
+### Diagnostic details
+
+1. **Process gates cannot detect a false premise.** Every quality mechanism this repo has passed on wrong work: the tidy-first assessor recommended a sound refactor, `pre-completion-reviewer` returned PASS with no warnings, 78 tests were green, CI was green, `fallow dead-code` was clean, and a live `pi -ne` smoke repro succeeded.
+   None of them inspect whether the premise is true, because all of them validate internal consistency.
+   The only gate that could have caught it is evidence provenance, and nothing asks for that.
+2. **Escalation-delay.** Six spike rounds on the same hypothesis before it was questioned — far past the five-tool-call threshold. The trigger was external every time (see above), so the internal escalation heuristic never fired: it watches for *errors repeating*, and here every round "succeeded."
+3. **Unused tools.** No subagent was dispatched across the whole arc. A fresh-context agent asked "is this fixture representative?" would plausibly have caught in one turn what six rounds did not — precisely because it would not have inherited the hypothesis.
+4. **Feedback loops.** Code verification was exemplary and irrelevant. The unguarded loop was measurement: no provenance check on fixtures, no cache control, no independent trials until the sixth round.
+
+### Changes made
+
+1. `.pi/prompts/plan-issue.md` — Decide section now requires stating how a reproduction was produced, and says plainly that a self-built fixture is not a reproduction because it can only confirm the model that built it.
+2. `.pi/agents/pre-completion-reviewer.md` — new check `2d. Evidence provenance`, with its report-template entry; flags self-built fixtures, `n=1` conditions, and uncontrolled cached/stochastic sources as WARN. Subsequent checks renumbered `2e`–`2j`.
+3. `.pi/skills/code-design/SKILL.md` — new "Removing code you shipped" heuristic: would we write it today, knowing what we know now?
+
+Rejected: an `AGENTS.md` cache-measurement rule (duplicates the `anthropic` skill), and a rule to dispatch a premise-challenging subagent (a real gap, but no firing condition specific enough to avoid becoming noise on every issue).
+
+### Open thread
+
+Issue [#65] is reopened and unfixed. The measured prompt-substitution mitigation is declined as out of scope for this package; the fix belongs in pi, tracked at [pi#9652].
