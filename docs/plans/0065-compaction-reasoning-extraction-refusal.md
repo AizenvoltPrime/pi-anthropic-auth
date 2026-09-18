@@ -5,6 +5,13 @@ issue_title: "/compact fails with message that it violates Anthropic's ToS"
 
 # Strip transcribed assistant reasoning from Anthropic OAuth summarization requests
 
+> **Superseded 2026-09-17.**
+> The mechanism this plan is built on — that transcribing assistant thinking causes Anthropic's `reasoning_extraction` refusal — was falsified by later measurement, and the shipped fix was reverted in `v2.0.10`.
+> Every "measured" row below came from a hand-written transcript imitating `serializeConversation`, at one trial per condition, with Anthropic's prompt cache uncontrolled.
+> The real trigger is pi's turn-prefix summarization prompt over a sub-3k-character transcript on `claude-fable-5-1` only.
+> See the retro's "Correction: the mechanism was wrong" entry for the full record.
+> This document is retained unedited below as the record of what was planned and why.
+
 ## Release Recommendation
 
 **Release:** ship independently

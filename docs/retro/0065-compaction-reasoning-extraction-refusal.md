@@ -192,3 +192,56 @@ Outcomes:
 3. **Prefer a self-inflicted explanation over a vendor-side one.**
    "Anthropic retuned the classifier" was plausible, had supporting citations, and required nothing of us — which is precisely why it should have drawn more suspicion than it did.
    The operator's question, not the agent's own review, is what reopened it.
+
+## Stage: Correction — the mechanism was wrong (2026-09-17)
+
+### Session summary
+
+A pi maintainer reopened [pi#9652] asking for a reproducing session, and asked whether the trigger was really the thinking or its content.
+Chasing that question collapsed the entire diagnosis: transcribed thinking does not cause the refusal, the shipped fix was inert, and `v2.0.10` reverts it.
+The real trigger is pi's `TURN_PREFIX_SUMMARIZATION_PROMPT` over a transcript under ~3k characters, on `claude-fable-5-1` only.
+
+### What the measurements actually show
+
+All rows n=5 independent trials, per-trial nonce defeating Anthropic's prompt cache.
+
+| Condition | Refusals |
+| --- | --- |
+| Real session, 28.5k chars, thinking present (`claude-fable-5-1`) | 0/5 |
+| Real session, same, thinking stripped | 0/5 |
+| Real session, 150 msgs / 68 thinking blocks / 149k chars (`claude-fable-5`) | 0/5 |
+| Turn-prefix prompt, 163 / 658 / 2,650-char transcripts (`claude-fable-5-1`) | 5/5 each |
+| Turn-prefix prompt, 10,666 chars | 1/5 |
+| Turn-prefix prompt, 26,818 chars | 0/5 |
+| Reporter's transcript + pi's **full** compaction prompt (`claude-fable-5-1`) | 0/5 |
+| Reporter's transcript + turn-prefix prompt on `claude-fable-5` | 0/5 |
+| Reporter's transcript, wrapped vs unwrapped transport | identical — extension not implicated |
+
+### Observations
+
+- **The fixture inherited the hypothesis.** Every "measured" row in the plan came from a `<conversation>` string written by hand to imitate `serializeConversation`.
+  Four rounds of increasingly careful measurement all tested that fixture harder, never questioning whether it represented reality.
+  The operator's question — "are we forcing content that can only be produced artificially?" — is what broke it, and no amount of internal rigor would have, because the rigor was pointed at the wrong object.
+- **Prompt caching silently collapsed n to 1.** Five byte-identical trials return one cached classifier verdict five times, which reads as perfect determinism.
+  Two contradictory "5/5 vs 0/5" marker effects were produced this way, in opposite directions, before a per-trial nonce dissolved both.
+  Any probe of a stochastic vendor-side behavior needs a nonce and independent trials, stated as a precondition rather than discovered.
+- **The reporter had the answer in the thread the whole time.**
+  Their reproduction contains no thinking text, and they said explicitly it was "an additional case to check, not confirmation that copied thinking caused it."
+  It was skimmed as a side case twice because it did not fit the working hypothesis — the clearest disconfirming evidence available, discounted for being disconfirming.
+- **The guidance citation never supported the fix.** Anthropic's Fable 5 guidance addresses instructing a model to *emit* its reasoning as response text; pi passes prior reasoning as *input* context, which Anthropic's preserved-thinking feature explicitly supports.
+  The two were conflated on the word "transcribe" from planning onward.
+  When the refusal claim fell, "it still helps users follow Anthropic's guidance" was offered as a fallback justification — that was rationalization protecting shipped work, and the operator named it as sunk cost.
+- **Reverting was hand-edited before being done properly.** The first attempt rewrote the files manually; the operator caught it and `git revert` of the five commits applied cleanly with no conflicts, producing a tree byte-identical to the pre-fix state.
+  A mechanical revert is auditable and a hand-edit is not — particularly after a session in which hand-built artifacts were the root cause.
+- **The plan and this retro were deliberately not reverted.** They are the record, including the wrong turns; corrections are appended and the originals left unedited.
+
+### Changes made
+
+1. `git revert` of `9134060`, `eccb536`, `109317a`, `d2fdab8`, `94ac917` — removes `src/summarization-shaping.ts`, its constants, its wiring, its tests, and the two summarization drift tests. `a9e3255` (`normalizeSystemBlocks`) retained.
+2. `git revert` of `4b2a070`, plus a rewritten `README.md` troubleshooting entry describing the real trigger and stating that this extension does not fix it.
+3. `docs/plans/0065-*.md` — superseded banner at the top; body left unedited.
+4. Issue [#65] reopened with a correction comment and the measurement tables.
+5. [pi#9652] corrected upstream with the same data, retracting the thinking mechanism and the [#9602] tie-in.
+
+[pi#9652]: https://github.com/earendil-works/pi/issues/9652
+[#9602]: https://github.com/earendil-works/pi/issues/9602
