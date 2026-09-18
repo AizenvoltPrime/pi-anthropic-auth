@@ -19,7 +19,8 @@ compatibility: Intended for the pi-anthropic-auth repository and Pi Anthropic OA
 2. Prefer the thinnest fix that works.
 3. Preserve Pi's built-in Anthropic behavior by default.
 4. Prefer request shaping before prompt rewriting.
-5. Avoid `streamSimple` unless hooks are clearly insufficient — they are insufficient for compaction and background-agent calls, which is why this repo wraps the transport (Issue #18).
+5. A refusal blamed on request *content* needs an organic-data control before it becomes a diagnosis (Issue #65).
+6. Avoid `streamSimple` unless hooks are clearly insufficient — they are insufficient for compaction and background-agent calls, which is why this repo wraps the transport (Issue #18).
 
 ## Repo-Specific Findings
 
@@ -92,6 +93,25 @@ To check what shaping does to a real prompt, import upstream `buildSystemPrompt`
 Use a filesystem path, not the bare `@earendil-works/pi-coding-agent/dist/...` specifier — that subpath is absent from the package's `exports` map, so Node rejects it with `ERR_PACKAGE_PATH_NOT_EXPORTED` and vite's resolver rejects it too.
 Write the script in the repo root, not `/tmp` — relative `./node_modules` and `./src` imports resolve against the script's directory (Refs #10).
 The same technique is used by one test, `test/upstream-prompt-drift.test.ts`, to check the preamble anchors against the installed Pi (Issue #52); everywhere else tests still build fixtures inline (see Testing Guidance in `AGENTS.md`).
+
+### 4. Probe Anthropic classifiers with organic data and independent trials
+
+Anthropic's refusal classifiers (`reasoning_extraction` and friends) are stochastic, model-specific, and content-sensitive.
+A black-box probe gets three things wrong by default:
+
+1. **Build the payload from a real session, not by hand.**
+   Load a session from `~/.pi/agent/sessions/`, take its `message` entries, and run pi's own `serializeConversation` over them — a hand-written `<conversation>` string tests your model of the bug, not the bug.
+2. **Defeat the prompt cache, and run n>=5.**
+   Byte-identical trials return one cached verdict repeatedly, which reads as perfect determinism.
+   Insert a per-trial nonce (`(ref ${Math.random().toString(36).slice(2, 10)})`) into the payload.
+3. **Place the positive control downstream of whatever you are testing.**
+   Probing through `createAnthropicOAuthStreamSimple` measures the shaped payload, so a control that only proves "the classifier still fires" cannot detect that our own shaping removed the variable under test.
+   Use `pickAnthropicStreamSimple` directly when the question is about pi's payload rather than ours.
+
+Vary one factor at a time and record refusal rates, not verdicts.
+Expect model-specific answers: `claude-fable-5-1` refuses payloads `claude-fable-5` accepts, and 5.1 is unreachable on the unwrapped transport because pi's `claude-cli` user-agent trips the version floor (Issue #60).
+
+Issue #65 is the worked example of all three failures at once — see `docs/retro/0065-*.md`.
 
 ## Implementation Guidance
 
