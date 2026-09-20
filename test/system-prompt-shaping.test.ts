@@ -3,9 +3,7 @@ import { onTestFinished, test, vi } from "vitest";
 
 import {
   _resetShapingWarnings,
-  sanitizeSystemText,
   shapeAnthropicOAuthSystemPrompt,
-  shapeStructuredSystemPrompt,
   shapeSystemBlocks,
 } from "#src/system-prompt-shaping";
 import {
@@ -17,609 +15,6 @@ import {
   FIXTURE_TOOL_SNIPPETS,
   PROJECT_INSTRUCTION,
 } from "#test/system-prompt-fixture-parts";
-
-// ---------------------------------------------------------------------------
-// Realistic Pi preamble fixture
-//
-// Mirrors the structure upstream `buildSystemPrompt` produces, including the
-// "In addition to the tools above" filler and the Pi documentation block.
-// Extension-contributed promptSnippets appear in "Available tools:" and
-// extension-contributed promptGuidelines appear in "Guidelines:".
-// ---------------------------------------------------------------------------
-const PI_PREAMBLE = [
-  "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-  "",
-  "Available tools:",
-  `- read: ${FIXTURE_TOOL_SNIPPETS.read}`,
-  `- bash: ${FIXTURE_TOOL_SNIPPETS.bash}`,
-  "- my_ext_tool: Extension-registered tool snippet",
-  "",
-  "In addition to the tools above, you may have access to other custom tools depending on the project.",
-  "",
-  "Guidelines:",
-  "- Be concise in your responses",
-  "- Show file paths clearly when working with files",
-  `- ${EXTRA_GUIDELINE}`,
-  "",
-  "Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):",
-  "- Main documentation: /home/user/.pi/agent/README.md",
-  "- Additional docs: /home/user/.pi/agent/docs",
-  "- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)",
-].join("\n");
-
-// Build a Pi-preamble-prefixed system prompt from case-specific sections.
-function piPrompt(...sections: string[]): string {
-  return [PI_PREAMBLE, "", ...sections].join("\n");
-}
-
-// Assert the preamble-replacement invariant shared across shaping tests:
-// the minimal prompt is prepended and the Pi identity is stripped.
-function assertPreambleReplaced(shaped: string): void {
-  assert.match(shaped, /^You are an expert coding assistant\./);
-  assert.doesNotMatch(shaped, /operating inside pi, a coding agent harness/);
-}
-
-// ---------------------------------------------------------------------------
-// Verbatim upstream system-prompt fixture
-//
-// Unlike PI_PREAMBLE above (a trimmed structural sketch), this mirrors the
-// full output of upstream `buildSystemPrompt` line-for-line: the complete
-// multi-line "Pi documentation" block, the "In addition to the tools above"
-// filler, an appended extension note, the <project_context> block, and the
-// cwd footer.  It pins the anchor-driven sanitizer against the real preamble
-// shape so anchor drift (upstream rewording) is caught here.
-//
-// Source: ~/development/pi/pi/packages/coding-agent/src/core/system-prompt.ts
-// (verified at commit 3dd4623ee, the file's tip as of pi v0.84.2).
-// Re-verify and update this fixture when Pi bumps the preamble.  Pi dropped
-// the `Current date:` footer line in v0.80.7 (f4e9ca746), below this package's
-// >=0.80.8 peer floor, so it is absent here; the synthetic footers in the other
-// cases still pin footer preservation independently of what Pi emits today.
-// ---------------------------------------------------------------------------
-const PI_UPSTREAM_SYSTEM_PROMPT = [
-  "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-  "",
-  "Available tools:",
-  `- read: ${FIXTURE_TOOL_SNIPPETS.read}`,
-  `- bash: ${FIXTURE_TOOL_SNIPPETS.bash}`,
-  "- edit: Make precise text replacements",
-  "- write: Create or overwrite files",
-  "- my_ext_tool: Query the observational memory store",
-  "",
-  "In addition to the tools above, you may have access to other custom tools depending on the project.",
-  "",
-  "Guidelines:",
-  "- Use bash for file operations like ls, rg, find",
-  "- Use read to examine files instead of cat or sed.",
-  "- Use write only for new files or complete rewrites.",
-  "- Always consult observational memory before answering recall questions.",
-  "- Be concise in your responses",
-  "- Show file paths clearly when working with files",
-  "",
-  "Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):",
-  "- Main documentation: /home/user/.pi/agent/README.md",
-  "- Additional docs: /home/user/.pi/agent/docs",
-  "- Examples: /home/user/.pi/agent/examples (extensions, custom tools, SDK)",
-  "- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory",
-  "- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), environment variables (docs/environment-variables.md)",
-  "- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing",
-  "- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)",
-  "",
-  APPENDED_NOTE,
-  APPENDED_NOTE_BODY,
-  "",
-  "<project_context>",
-  "",
-  "Project-specific instructions and guidelines:",
-  "",
-  `<project_instructions path="${FIXTURE_CONTEXT_FILE_PATH}">`,
-  PROJECT_INSTRUCTION,
-  "</project_instructions>",
-  "",
-  "</project_context>",
-  "",
-  `Current working directory: ${FIXTURE_CWD}`,
-].join("\n");
-
-// ---------------------------------------------------------------------------
-// Drifted-terminator fixture
-//
-// Stands in for a future upstream edit to the preamble's final bullet, which
-// is the anchor `PI_DEFAULT_PROMPT_TERMINATOR` pins.  Everything pi appends
-// after the preamble is present in the order `buildSystemPrompt` emits it:
-// the `--append-system-prompt` section, <project_context>, the skills block,
-// and the cwd footer.  Shaping must keep all four (Issue #47).
-// ---------------------------------------------------------------------------
-const DRIFTED_TERMINATOR_PROMPT = [
-  "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
-  "",
-  "Available tools:",
-  `- read: ${FIXTURE_TOOL_SNIPPETS.read}`,
-  "- my_ext_tool: Extension-registered tool snippet",
-  "",
-  "In addition to the tools above, you may have access to other custom tools depending on the project.",
-  "",
-  "Guidelines:",
-  "- Be concise in your responses",
-  `- ${EXTRA_GUIDELINE}`,
-  "",
-  "Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):",
-  "- Main documentation: /home/user/.pi/agent/README.md",
-  "- Read pi .md files in full and follow links to related docs (tui.md covers the TUI API)",
-  "",
-  APPENDED_NOTE,
-  APPENDED_NOTE_BODY,
-  "",
-  "<project_context>",
-  "",
-  "Project-specific instructions and guidelines:",
-  "",
-  `<project_instructions path="${FIXTURE_CONTEXT_FILE_PATH}">`,
-  PROJECT_INSTRUCTION,
-  "</project_instructions>",
-  "",
-  "</project_context>",
-  "",
-  "<available_skills>",
-  "- deploy: how to ship this project",
-  "</available_skills>",
-  "",
-  `Current working directory: ${FIXTURE_CWD}`,
-].join("\n");
-
-// ===== sanitizeSystemText =====
-
-test("sanitizeSystemText removes paragraphs with Pi identity anchor", () => {
-  const text = [
-    "You are an expert coding assistant operating inside pi, a coding agent harness. You help users.",
-    "",
-    "Some other paragraph.",
-  ].join("\n");
-
-  const result = sanitizeSystemText(text);
-
-  assert.doesNotMatch(result, /operating inside pi, a coding agent harness/);
-  assert.match(result, /Some other paragraph\./);
-});
-
-test("sanitizeSystemText removes 'In addition to the tools above' filler", () => {
-  const text = [
-    "Available tools:",
-    "- read: Read file contents",
-    "",
-    "In addition to the tools above, you may have access to other custom tools depending on the project.",
-    "",
-    "Guidelines:",
-    "- Be concise",
-  ].join("\n");
-
-  const result = sanitizeSystemText(text);
-
-  assert.match(result, /Available tools:/);
-  assert.doesNotMatch(result, /In addition to the tools above/);
-  assert.match(result, /Guidelines:/);
-});
-
-test("sanitizeSystemText removes Pi documentation block", () => {
-  const text = [
-    "Guidelines:",
-    "- Be concise",
-    "",
-    "Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):",
-    "- Main documentation: /home/user/.pi/agent/README.md",
-    "- Always read pi .md files completely",
-    "",
-    "# Project Context",
-  ].join("\n");
-
-  const result = sanitizeSystemText(text);
-
-  assert.match(result, /Guidelines:/);
-  assert.doesNotMatch(
-    result,
-    /Pi documentation \(read only when the user asks about pi itself/,
-  );
-  assert.doesNotMatch(result, /Main documentation:/);
-  assert.match(result, /# Project Context/);
-});
-
-test("sanitizeSystemText applies TEXT_REPLACEMENTS for known classifier phrases", () => {
-  const text =
-    "Here is some useful information about the environment you are running in:\nOS: Linux";
-
-  const result = sanitizeSystemText(text);
-
-  assert.doesNotMatch(result, /Here is some useful information/);
-  assert.match(result, /Environment context you are running in:/);
-  assert.match(result, /OS: Linux/);
-});
-
-test("sanitizeSystemText preserves paragraphs without anchors", () => {
-  const text = [
-    "## Custom Note",
-    "- Some critical instruction.",
-    "",
-    "# Project Context",
-    "",
-    "Project guidance.",
-  ].join("\n");
-
-  assert.equal(sanitizeSystemText(text), text);
-});
-
-// ===== shapeAnthropicOAuthSystemPrompt =====
-
-test("replaces Pi preamble with minimal prompt and preserves tools, guidelines, and context", () => {
-  const systemPrompt = piPrompt(
-    "# Project Context",
-    "",
-    "Project-specific instructions and guidelines:",
-    "",
-    "## /tmp/AGENTS.md",
-    "",
-    "Preserve built-in Anthropic behavior by default.",
-    "Current date: 2026-04-21",
-    "Current working directory: /tmp/project",
-  );
-
-  const shaped = shapeAnthropicOAuthSystemPrompt(systemPrompt);
-
-  // Minimal prompt prepended, Pi identity removed
-  assertPreambleReplaced(shaped);
-  assert.match(shaped, /Be concise and helpful\./);
-  assert.match(
-    shaped,
-    /Use the available tools to answer the user's request\./,
-  );
-
-  // Pi documentation removed
-  assert.doesNotMatch(
-    shaped,
-    /Pi documentation \(read only when the user asks about pi itself/,
-  );
-  assert.doesNotMatch(shaped, /Main documentation:/);
-
-  // Pi filler removed
-  assert.doesNotMatch(shaped, /In addition to the tools above/);
-
-  // Extension-contributed tool snippets preserved
-  assert.match(shaped, /my_ext_tool: Extension-registered tool snippet/);
-
-  // Extension-contributed guidelines preserved
-  assert.match(shaped, /Always check the frobnicator before deploying/);
-
-  // Built-in guidelines preserved
-  assert.match(shaped, /Be concise in your responses/);
-
-  // Project context preserved
-  assert.match(shaped, /# Project Context/);
-  assert.match(shaped, /Preserve built-in Anthropic behavior by default\./);
-
-  // Footer preserved
-  assert.match(shaped, /Current date: 2026-04-21/);
-  assert.match(shaped, /Current working directory: \/tmp\/project/);
-});
-
-test("pins the removed/retained split against the verbatim upstream prompt", () => {
-  const shaped = shapeAnthropicOAuthSystemPrompt(PI_UPSTREAM_SYSTEM_PROMPT);
-
-  // Pi identity paragraph replaced with the minimal neutral prompt.
-  assertPreambleReplaced(shaped);
-  assert.match(shaped, /Be concise and helpful\./);
-
-  // Retained: Available tools block, including built-in and extension snippets.
-  assert.match(shaped, /Available tools:/);
-  assert.match(shaped, /- read: Read file contents/);
-  assert.match(shaped, /- write: Create or overwrite files/);
-  assert.match(shaped, /- my_ext_tool: Query the observational memory store/);
-
-  // Retained: Guidelines block, including the extension-contributed guideline.
-  assert.match(shaped, /Guidelines:/);
-  assert.match(
-    shaped,
-    /- Always consult observational memory before answering recall questions\./,
-  );
-  assert.match(shaped, /- Be concise in your responses/);
-
-  // Removed: the custom-tool filler paragraph.
-  assert.doesNotMatch(shaped, /In addition to the tools above/);
-
-  // Removed: the entire Pi documentation block (header and its doc-path bullets).
-  assert.doesNotMatch(
-    shaped,
-    /Pi documentation \(read only when the user asks about pi itself/,
-  );
-  assert.doesNotMatch(shaped, /- Main documentation:/);
-  assert.doesNotMatch(shaped, /- Additional docs:/);
-  assert.doesNotMatch(shaped, /docs\/extensions\.md/);
-
-  // Retained: appended extension content, project context, and the footer.
-  assert.match(shaped, /## Custom Note \(from another extension\)/);
-  assert.match(shaped, /- Some critical project instruction\./);
-  assert.match(shaped, /<project_context>/);
-  assert.match(shaped, /Preserve built-in Anthropic behavior by default\./);
-  assert.match(shaped, /Current working directory: \/tmp\/project/);
-});
-
-test("leaves unrelated system prompt content unchanged", () => {
-  const systemPrompt = [
-    "Project-specific instructions and guidelines:",
-    "## AGENTS.md",
-    "Preserve built-in Anthropic behavior by default.",
-  ].join("\n");
-
-  assert.equal(shapeAnthropicOAuthSystemPrompt(systemPrompt), systemPrompt);
-});
-
-test("preserves content appended between preamble and Project Context (issue #9)", () => {
-  const systemPrompt = piPrompt(
-    "## Custom Note",
-    "- Some critical instruction added by another extension.",
-    "",
-    "# Project Context",
-    "",
-    "## /tmp/AGENTS.md",
-    "",
-    "Project guidance.",
-  );
-
-  const shaped = shapeAnthropicOAuthSystemPrompt(systemPrompt);
-
-  assertPreambleReplaced(shaped);
-  assert.match(shaped, /## Custom Note/);
-  assert.match(
-    shaped,
-    /- Some critical instruction added by another extension\./,
-  );
-  assert.match(shaped, /# Project Context/);
-  assert.match(shaped, /Project guidance\./);
-});
-
-test("preserves trailing footer when there is no Project Context section", () => {
-  const systemPrompt = piPrompt(
-    "## Trailing Note",
-    "- Appended by another extension.",
-    "Current date: 2026-04-21",
-    "Current working directory: /tmp/project",
-  );
-
-  const shaped = shapeAnthropicOAuthSystemPrompt(systemPrompt);
-
-  assertPreambleReplaced(shaped);
-  assert.match(shaped, /## Trailing Note/);
-  assert.match(shaped, /- Appended by another extension\./);
-  assert.match(shaped, /Current date: 2026-04-21/);
-  assert.match(shaped, /Current working directory: \/tmp\/project/);
-});
-
-test("preserves content appended at the very end of the system prompt", () => {
-  const systemPrompt = piPrompt(
-    "# Project Context",
-    "",
-    "## /tmp/AGENTS.md",
-    "",
-    "Project guidance.",
-    "Current date: 2026-04-21",
-    "Current working directory: /tmp/project",
-    "",
-    "## Custom Note",
-    "- Some critical instruction.",
-  );
-
-  const shaped = shapeAnthropicOAuthSystemPrompt(systemPrompt);
-
-  assertPreambleReplaced(shaped);
-  assert.match(shaped, /## Custom Note/);
-  assert.match(shaped, /- Some critical instruction\./);
-  assert.match(shaped, /Project guidance\./);
-});
-
-test("does not sanitize extension content outside the Pi preamble span", () => {
-  const systemPrompt = piPrompt(
-    "## Custom Note",
-    "In addition to the tools above, this extension adds a downstream policy paragraph.",
-    "",
-    "# Project Context",
-    "",
-    "Project guidance.",
-  );
-
-  const shaped = shapeAnthropicOAuthSystemPrompt(systemPrompt);
-
-  assert.match(
-    shaped,
-    /In addition to the tools above, this extension adds a downstream policy paragraph\./,
-  );
-  assert.match(shaped, /my_ext_tool: Extension-registered tool snippet/);
-  assert.doesNotMatch(
-    shaped,
-    /^.*In addition to the tools above, you may have access to other custom tools depending on the project\./m,
-  );
-});
-
-test("preserves everything pi appended when the terminator drifts (issue #47)", () => {
-  _resetShapingWarnings();
-  const originalWarn = console.warn;
-  console.warn = () => {};
-
-  try {
-    const shaped = shapeAnthropicOAuthSystemPrompt(DRIFTED_TERMINATOR_PROMPT);
-
-    assertPreambleReplaced(shaped);
-
-    // Retained: the appendSystemPrompt section, which sits between the
-    // preamble and <project_context>.
-    assert.match(shaped, /## Custom Note \(from another extension\)/);
-    assert.match(shaped, /- Some critical project instruction\./);
-
-    // Retained: the project context files.
-    assert.match(shaped, /<project_context>/);
-    assert.match(shaped, /Preserve built-in Anthropic behavior by default\./);
-
-    // Retained: the skills block.
-    assert.match(shaped, /<available_skills>/);
-    assert.match(shaped, /- deploy: how to ship this project/);
-
-    // Retained: the footer.
-    assert.match(shaped, /Current working directory: \/tmp\/project/);
-
-    // Retained: extension-contributed tool snippets and guidelines.
-    assert.match(shaped, /my_ext_tool: Extension-registered tool snippet/);
-    assert.match(shaped, /Always check the frobnicator before deploying/);
-
-    // Removed: the Pi-specific paragraphs the anchors name.
-    assert.doesNotMatch(shaped, /In addition to the tools above/);
-    assert.doesNotMatch(
-      shaped,
-      /Pi documentation \(read only when the user asks about pi itself/,
-    );
-    assert.doesNotMatch(shaped, /Main documentation:/);
-  } finally {
-    console.warn = originalWarn;
-    _resetShapingWarnings();
-  }
-});
-
-test("sanitizes beyond the preamble span in fallback mode (issue #47)", () => {
-  _resetShapingWarnings();
-  const originalWarn = console.warn;
-  console.warn = () => {};
-
-  try {
-    const drifted = [
-      PI_PREAMBLE.replace(
-        "- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)",
-        "- Read pi .md files in full and follow links to related docs (tui.md covers the TUI API)",
-      ),
-      "",
-      "## Custom Note",
-      "In addition to the tools above, this extension adds a downstream policy paragraph.",
-      "",
-      "## Unrelated Note",
-      "- Kept because it quotes no anchor.",
-      "",
-      "<project_context>",
-      "",
-      "Project guidance.",
-      "",
-      "</project_context>",
-    ].join("\n");
-
-    const shaped = shapeAnthropicOAuthSystemPrompt(drifted);
-
-    // Deliberate trade-off: with no terminator there is no trustworthy span
-    // end, so an anchor-quoting paragraph in appended content is dropped too
-    // -- along with the heading sharing its paragraph.  The primary path keeps
-    // both; see "does not sanitize extension content outside the Pi preamble
-    // span", which pins the same input with the terminator intact.
-    assert.doesNotMatch(shaped, /downstream policy paragraph/);
-    assert.doesNotMatch(shaped, /## Custom Note/);
-
-    // Only anchor-quoting paragraphs are affected; the rest is untouched.
-    assert.match(shaped, /## Unrelated Note/);
-    assert.match(shaped, /- Kept because it quotes no anchor\./);
-    assert.match(shaped, /<project_context>/);
-    assert.match(shaped, /Project guidance\./);
-  } finally {
-    console.warn = originalWarn;
-    _resetShapingWarnings();
-  }
-});
-
-test("warns once when the preamble terminator is missing", () => {
-  _resetShapingWarnings();
-  const originalWarn = console.warn;
-  const warnings: string[] = [];
-  console.warn = (...args: unknown[]) => {
-    warnings.push(args.map(String).join(" "));
-  };
-
-  try {
-    const reworded = [
-      "You are an expert coding assistant operating inside pi, a coding agent harness. Reworded preamble that no longer ends with the terminator bullet.",
-      "",
-      "# Project Context",
-      "",
-      "Project guidance.",
-    ].join("\n");
-
-    const shaped1 = shapeAnthropicOAuthSystemPrompt(reworded);
-    const shaped2 = shapeAnthropicOAuthSystemPrompt(reworded);
-
-    assert.match(shaped1, /^You are an expert coding assistant\./);
-    assert.match(shaped1, /# Project Context/);
-    assert.match(shaped1, /Project guidance\./);
-    assert.doesNotMatch(shaped1, /operating inside pi, a coding agent harness/);
-    assert.doesNotMatch(shaped1, /Reworded preamble/);
-    assert.equal(shaped1, shaped2);
-    assert.equal(warnings.length, 1);
-    assert.match(warnings[0], /preamble terminator not found/);
-  } finally {
-    console.warn = originalWarn;
-    _resetShapingWarnings();
-  }
-});
-
-test("preserves anchorless trailing content when the terminator is missing", () => {
-  _resetShapingWarnings();
-  const originalWarn = console.warn;
-  console.warn = () => {};
-
-  try {
-    const reworded = [
-      "You are an expert coding assistant operating inside pi, a coding agent harness. Reworded preamble.",
-      "",
-      "Trailing content with no known anchors.",
-    ].join("\n");
-
-    const shaped = shapeAnthropicOAuthSystemPrompt(reworded);
-
-    assertPreambleReplaced(shaped);
-    assert.doesNotMatch(shaped, /Reworded preamble/);
-    assert.match(shaped, /Trailing content with no known anchors\./);
-  } finally {
-    console.warn = originalWarn;
-    _resetShapingWarnings();
-  }
-});
-
-// ===== shapeSystemBlocks =====
-
-test("shapeSystemBlocks passes through non-text blocks and blocks without the prefix", () => {
-  const blocks = [
-    {
-      type: "text" as const,
-      text: "You are Claude Code, Anthropic's official CLI for Claude.",
-    },
-    {
-      type: "image" as const,
-      text: "ignored",
-    },
-    {
-      type: "text" as const,
-      text: [PI_PREAMBLE, "", "# Project Context", "", "Guidance."].join("\n"),
-    },
-  ];
-
-  const shaped = shapeSystemBlocks(
-    blocks as Parameters<typeof shapeSystemBlocks>[0],
-  );
-
-  // Block 0: identity block, unchanged.
-  assert.equal(shaped[0]?.text, blocks[0]?.text);
-  // Block 1: non-text, unchanged.
-  assert.deepEqual(shaped[1], blocks[1]);
-  // Block 2: preamble replaced, extension content preserved.
-  assert.match(shaped[2]?.text ?? "", /^You are an expert coding assistant\./);
-  assert.match(shaped[2]?.text ?? "", /# Project Context/);
-  assert.match(shaped[2]?.text ?? "", /Guidance\./);
-  assert.match(
-    shaped[2]?.text ?? "",
-    /my_ext_tool: Extension-registered tool snippet/,
-  );
-});
-
-// ===== shapeStructuredSystemPrompt (pi >= 0.86.0) =====
 
 // ---------------------------------------------------------------------------
 // Pi 0.86.0 system-prompt fixture
@@ -717,13 +112,20 @@ test("the 0.86.0 fixture is well-formed before shaping", () => {
 
 test("leaves no unbalanced section tags in the shaped prompt", () => {
   assert.deepEqual(
-    unbalancedTags(shapeStructuredSystemPrompt(pi086Prompt())),
+    unbalancedTags(shapeAnthropicOAuthSystemPrompt(pi086Prompt())),
     [],
   );
 });
 
+// Assert the preamble-replacement invariant shared across shaping tests:
+// the minimal prompt replaces pi's identity paragraph.
+function assertPreambleReplaced(shaped: string): void {
+  assert.match(shaped, /^You are an expert coding assistant\./);
+  assert.doesNotMatch(shaped, /operating inside pi, a coding agent harness/);
+}
+
 test("replaces the untagged preamble with the minimal prompt", () => {
-  const shaped = shapeStructuredSystemPrompt(pi086Prompt());
+  const shaped = shapeAnthropicOAuthSystemPrompt(pi086Prompt());
 
   assertPreambleReplaced(shaped);
   assert.match(shaped, /Be concise and helpful\./);
@@ -734,7 +136,7 @@ test("replaces the untagged preamble with the minimal prompt", () => {
 });
 
 test("drops the whole docs section", () => {
-  const shaped = shapeStructuredSystemPrompt(pi086Prompt());
+  const shaped = shapeAnthropicOAuthSystemPrompt(pi086Prompt());
 
   assert.doesNotMatch(shaped, /<docs>/);
   assert.doesNotMatch(shaped, /<\/docs>/);
@@ -746,7 +148,7 @@ test("drops the whole docs section", () => {
 });
 
 test("strips the filler from the tools section but keeps the section", () => {
-  const shaped = shapeStructuredSystemPrompt(pi086Prompt());
+  const shaped = shapeAnthropicOAuthSystemPrompt(pi086Prompt());
 
   assert.doesNotMatch(shaped, /In addition to the tools above/);
   assert.match(
@@ -756,7 +158,7 @@ test("strips the filler from the tools section but keeps the section", () => {
 });
 
 test("preserves rules, addendum, project context, skills, and cwd verbatim", () => {
-  const shaped = shapeStructuredSystemPrompt(pi086Prompt());
+  const shaped = shapeAnthropicOAuthSystemPrompt(pi086Prompt());
 
   assert.ok(shaped.includes(section("rules", PI_086_RULES_BODY)));
   assert.ok(
@@ -773,7 +175,7 @@ test("preserves rules, addendum, project context, skills, and cwd verbatim", () 
 });
 
 test("keeps an extension-registered section it knows nothing about", () => {
-  const shaped = shapeStructuredSystemPrompt(
+  const shaped = shapeAnthropicOAuthSystemPrompt(
     pi086Prompt({
       sections: [
         section("tools", PI_086_TOOLS_BODY),
@@ -786,7 +188,7 @@ test("keeps an extension-registered section it knows nothing about", () => {
 });
 
 test("keeps a docs section an extension overwrote with its own content", () => {
-  const shaped = shapeStructuredSystemPrompt(
+  const shaped = shapeAnthropicOAuthSystemPrompt(
     pi086Prompt({
       sections: [
         section("tools", PI_086_TOOLS_BODY),
@@ -804,7 +206,7 @@ test("keeps a docs section an extension overwrote with its own content", () => {
 });
 
 test("applies TEXT_REPLACEMENTS inside pi-owned sections", () => {
-  const shaped = shapeStructuredSystemPrompt(
+  const shaped = shapeAnthropicOAuthSystemPrompt(
     pi086Prompt({
       sections: [
         section(
@@ -823,7 +225,7 @@ test("applies TEXT_REPLACEMENTS inside pi-owned sections", () => {
 test("leaves a user's project context untouched by TEXT_REPLACEMENTS", () => {
   const quoted =
     "Here is some useful information about the environment you are running in:";
-  const shaped = shapeStructuredSystemPrompt(
+  const shaped = shapeAnthropicOAuthSystemPrompt(
     pi086Prompt({
       sections: [
         section("tools", PI_086_TOOLS_BODY),
@@ -839,7 +241,7 @@ test("leaves a user's project context untouched by TEXT_REPLACEMENTS", () => {
 });
 
 test("keeps a custom preamble that is not pi's default", () => {
-  const shaped = shapeStructuredSystemPrompt(
+  const shaped = shapeAnthropicOAuthSystemPrompt(
     pi086Prompt({ preamble: "You are a helpful assistant for Acme Corp." }),
   );
 
@@ -854,14 +256,114 @@ test("passes an unstructured prompt through untouched and warns once", () => {
     _resetShapingWarnings();
   });
 
-  // Pre-0.86 flat prompt: the Pi identity is there, but no sections are.
-  const flat = `${PI_PREAMBLE}\n\nCurrent working directory: ${FIXTURE_CWD}`;
+  // A pre-0.86 flat prompt: the Pi identity is there, but no sections are.
+  // Shaping cannot replace the single untagged chunk without discarding the
+  // project context and footer along with the preamble, so it declines.
+  const flat = [
+    "You are an expert coding assistant operating inside pi, a coding agent harness.",
+    "",
+    "Available tools:",
+    `- read: ${FIXTURE_TOOL_SNIPPETS.read}`,
+    "",
+    `Current working directory: ${FIXTURE_CWD}`,
+  ].join("\n");
 
-  assert.equal(shapeStructuredSystemPrompt(flat), flat);
-  assert.equal(shapeStructuredSystemPrompt(flat), flat);
+  assert.equal(shapeAnthropicOAuthSystemPrompt(flat), flat);
+  assert.equal(shapeAnthropicOAuthSystemPrompt(flat), flat);
   assert.equal(
     warnSpy.mock.calls.length,
     1,
     "the degraded-path warning is latched to one emission per process",
+  );
+});
+
+test("leaves a prompt without pi's preamble or sections unchanged", () => {
+  _resetShapingWarnings();
+  const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  onTestFinished(() => {
+    warnSpy.mockRestore();
+    _resetShapingWarnings();
+  });
+
+  const systemPrompt = [
+    "Project-specific instructions and guidelines:",
+    "## AGENTS.md",
+    PROJECT_INSTRUCTION,
+  ].join("\n");
+
+  assert.equal(shapeAnthropicOAuthSystemPrompt(systemPrompt), systemPrompt);
+});
+
+test("keeps the filler sentence when an extension quotes it downstream", () => {
+  // The anchor only fires inside pi's own tools section, so an extension that
+  // quotes the same sentence in its addendum keeps it (Issue #10).
+  const quoted =
+    "In addition to the tools above, this extension adds a downstream policy paragraph.";
+  const shaped = shapeAnthropicOAuthSystemPrompt(
+    pi086Prompt({
+      sections: [
+        section("tools", PI_086_TOOLS_BODY),
+        section("addendum", quoted),
+      ],
+    }),
+  );
+
+  assert.ok(shaped.includes(section("addendum", quoted)));
+  assert.doesNotMatch(
+    shaped,
+    /In addition to the tools above, you may have access to other custom tools/,
+  );
+});
+
+test("preserves a prompt with no project context or skills sections", () => {
+  const shaped = shapeAnthropicOAuthSystemPrompt(
+    pi086Prompt({
+      sections: [
+        section("tools", PI_086_TOOLS_BODY),
+        section("docs", PI_086_DOCS_BODY),
+        section("cwd", FIXTURE_CWD),
+      ],
+    }),
+  );
+
+  assertPreambleReplaced(shaped);
+  assert.doesNotMatch(shaped, /<docs>/);
+  assert.ok(shaped.endsWith(section("cwd", FIXTURE_CWD)));
+  assert.deepEqual(unbalancedTags(shaped), []);
+});
+
+// ===== shapeSystemBlocks =====
+
+test("shapeSystemBlocks passes through non-text blocks and blocks without the prefix", () => {
+  const blocks = [
+    {
+      type: "text" as const,
+      text: "You are Claude Code, Anthropic's official CLI for Claude.",
+    },
+    {
+      type: "image" as const,
+      text: "ignored",
+    },
+    {
+      type: "text" as const,
+      text: pi086Prompt(),
+    },
+  ];
+
+  const shaped = shapeSystemBlocks(
+    blocks as Parameters<typeof shapeSystemBlocks>[0],
+  );
+
+  // Block 0: identity block, unchanged.
+  assert.equal(shaped[0]?.text, blocks[0]?.text);
+  // Block 1: non-text, unchanged.
+  assert.deepEqual(shaped[1], blocks[1]);
+  // Block 2: preamble replaced, extension content preserved.
+  assert.match(shaped[2]?.text ?? "", /^You are an expert coding assistant\./);
+  assert.match(shaped[2]?.text ?? "", /<project_context>/);
+  assert.ok((shaped[2]?.text ?? "").includes(PROJECT_INSTRUCTION));
+  assert.match(
+    shaped[2]?.text ?? "",
+    /my_ext_tool: Extension-registered tool snippet/,
   );
 });

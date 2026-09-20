@@ -1,9 +1,9 @@
 import type {
   Api,
   AssistantMessageEventStream,
-  Context,
   Model,
   SimpleStreamOptions,
+  TranscriptContext,
 } from "@earendil-works/pi-ai";
 import type { AnthropicStreamSimpleDelegate } from "./host-transport";
 import { shapeAnthropicOAuthPayload } from "./request-shaping";
@@ -23,10 +23,16 @@ const ANTHROPIC_OAUTH_TOKEN_MARKER = "sk-ant-oat";
  * It matches `ApiStreamSimpleFunction` from `@earendil-works/pi-ai` and is
  * intentionally wider than a single concrete model type because Pi registers
  * it per `Api`, not per model.
+ *
+ * `context` is pi-ai's branded `TranscriptContext`, which only
+ * `normalizeContext()` produces.  We never read it — the wrapper forwards it
+ * to the delegate untouched — but naming the type keeps this signature in step
+ * with `provider-composer`'s own declaration, so a future upstream narrowing
+ * surfaces as a type error rather than passing silently.
  */
 export type AnthropicStreamSimple = (
   model: Model<Api>,
-  context: Context,
+  context: TranscriptContext,
   options?: SimpleStreamOptions,
 ) => AssistantMessageEventStream;
 

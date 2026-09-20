@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import type {
   Api,
   AssistantMessageEventStream,
-  Context,
   Model,
   SimpleStreamOptions,
+  TranscriptContext,
 } from "@earendil-works/pi-ai";
+import { normalizeContext } from "@earendil-works/pi-ai";
 import { beforeEach, describe, test } from "vitest";
 import {
   createAnthropicOAuthStreamSimple,
@@ -25,7 +26,9 @@ const MODEL = {
   provider: "anthropic",
 } as unknown as Model<"anthropic-messages">;
 
-const CONTEXT = { messages: [] } as unknown as Context;
+// `normalizeContext` is the only producer of the brand pi-ai's stream
+// signature requires, so the fake is minted rather than cast.
+const CONTEXT = normalizeContext({ messages: [] });
 
 function samplePayload() {
   return {
@@ -49,12 +52,12 @@ function samplePayload() {
 type CapturingDelegate = {
   delegate: (
     model: Model<Api>,
-    context: Context,
+    context: TranscriptContext,
     options?: SimpleStreamOptions,
   ) => AssistantMessageEventStream;
   calls: Array<{
     model: Model<Api>;
-    context: Context;
+    context: TranscriptContext;
     options?: SimpleStreamOptions;
   }>;
 };

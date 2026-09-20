@@ -8,16 +8,6 @@ export const PI_DEFAULT_PROMPT_PREFIX =
   "You are an expert coding assistant operating inside pi, a coding agent harness.";
 
 /**
- * Final line of Pi's built-in default system prompt preamble.
- *
- * Used to replace the entire Pi-generated preamble body with the minimal
- * neutral Anthropic OAuth prompt while preserving anything appended after the
- * preamble (project context, skills, and date/cwd footer).
- */
-export const PI_DEFAULT_PROMPT_TERMINATOR =
-  "- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)";
-
-/**
  * Prefix of the minimal neutral Anthropic OAuth system prompt.
  *
  * Used as a detection marker in request shaping to identify system blocks
@@ -116,16 +106,19 @@ export const BILLING_HEADER_POSITIONS = [4, 7, 20] as const;
 export const CLAUDE_CODE_ENTRYPOINT = "sdk-cli";
 
 // ---------------------------------------------------------------------------
-// Anchor-driven sanitizer constants
+// Section-aware sanitizer constants
 //
-// Used by the system prompt sanitizer to remove Pi-specific paragraphs
-// (identity, documentation references, filler) while preserving extension-
-// contributed content (tool snippets, guidelines, appended content).
+// Pi 0.86.0 renders its system prompt as an untagged preamble followed by
+// `<name>...</name>` sections, so the sanitizer decides section by section
+// rather than paragraph by paragraph.  Content-bearing sections are matched
+// on an anchor rather than on their name alone: upstream applies extension-
+// registered sections after its own, so a section called `docs` need not be
+// Pi's.
 //
-// A paragraph is any text between blank lines.  If a paragraph contains any
-// anchor string, it is dropped entirely.  This is resilient to upstream
-// rewording — as long as the anchor still appears somewhere in the paragraph,
-// removal works regardless of surrounding text changes.
+// Anchors stay resilient to upstream rewording — as long as the anchor still
+// appears in the section, the rule fires regardless of surrounding changes.
+// `test/upstream-prompt-drift.test.ts` checks each one against the installed
+// Pi's own `buildSystemPrompt` output.
 // ---------------------------------------------------------------------------
 
 /**
@@ -160,20 +153,11 @@ export const PI_TOOLS_FILLER_ANCHOR = "In addition to the tools above";
 export const PI_DOCS_SECTION_ANCHOR =
   "Pi documentation (read only when the user asks about pi itself";
 
-export const PARAGRAPH_REMOVAL_ANCHORS: readonly string[] = [
-  // Pi identity sentence
-  "operating inside pi, a coding agent harness",
-  // Pi-specific filler about custom tools
-  "In addition to the tools above",
-  // Pi documentation block — references Pi-specific docs/paths
-  "Pi documentation (read only when the user asks about pi itself",
-];
-
 /**
- * Inline text replacements applied after paragraph removal.
+ * Inline text replacements applied to Pi-generated sections.
  *
  * These handle known Anthropic classifier trigger phrases that may appear
- * in paragraphs we want to keep.  Each rule is applied with `replaceAll`.
+ * in sections we want to keep.  Each rule is applied with `replaceAll`.
  *
  * The "Here is some useful information..." phrase was isolated by
  * `opencode-anthropic-auth` via sliding-window bisection of a 10KB failing

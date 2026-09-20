@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import type {
   Api,
   AssistantMessageEventStream,
-  Context,
   Model,
   SimpleStreamOptions,
+  TranscriptContext,
 } from "@earendil-works/pi-ai";
-import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
+import {
+  createAssistantMessageEventStream,
+  normalizeContext,
+} from "@earendil-works/pi-ai";
 import {
   getApiProvider,
   registerApiProvider,
@@ -28,7 +31,9 @@ const MODEL = {
   provider: "anthropic",
 } as unknown as Model<"anthropic-messages">;
 
-const CONTEXT = { messages: [] } as unknown as Context;
+// `normalizeContext` is the only producer of the brand pi-ai's stream
+// signature requires, so the fake is minted rather than cast.
+const CONTEXT = normalizeContext({ messages: [] });
 
 /**
  * Stubbed transport standing in for the bare built-in Anthropic transport that
@@ -47,7 +52,7 @@ const { delegateCalls, builtinTransportMock } = vi.hoisted(() => {
   const builtinTransportMock: Mock<
     (
       model: Model<Api>,
-      context: Context,
+      context: TranscriptContext,
       options?: SimpleStreamOptions,
     ) => AssistantMessageEventStream
   > = vi.fn((_model, _context, options) => {
@@ -89,7 +94,7 @@ let registryStubCalls = 0;
  */
 function lazyStubStreamSimple(
   model: Model<Api>,
-  context: Context,
+  context: TranscriptContext,
   options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
   registryStubCalls += 1;
@@ -130,7 +135,7 @@ function createFakePi(): {
   calls: string[];
   dispatch: (
     model: Model<Api>,
-    context: Context,
+    context: TranscriptContext,
     options?: SimpleStreamOptions,
   ) => AssistantMessageEventStream;
 } {
@@ -158,7 +163,7 @@ function createFakePi(): {
 
   const dispatch = (
     model: Model<Api>,
-    context: Context,
+    context: TranscriptContext,
     options?: SimpleStreamOptions,
   ): AssistantMessageEventStream => {
     if (!registered?.streamSimple || model.api !== registered.api) {

@@ -1,5 +1,6 @@
 allowBuilds:
   "@google/genai": true
+  esbuild: true
   koffi: true
   protobufjs: true
 minimumReleaseAgeExclude:
@@ -22,3 +23,9 @@ minimumReleaseAgeExclude:
   - '@earendil-works/pi-protocol@0.84.0'
   - '@earendil-works/pi-telemetry@0.84.0'
   - '@earendil-works/pi-tui@0.84.0'
+  - '@earendil-works/chord@0.86.0'
+  - '@earendil-works/pi-agent-core@0.86.0'
+  - '@earendil-works/pi-ai@0.86.0'
+  - '@earendil-works/pi-coding-agent@0.86.0'
+  - '@earendil-works/pi-telemetry@0.86.0'
+  - '@earendil-works/pi-tui@0.86.0'

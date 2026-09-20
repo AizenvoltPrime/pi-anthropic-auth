@@ -290,8 +290,20 @@ test("shapes OAuth payloads detected by the injected billing header marker", () 
 });
 
 test("shapes Pi default system prompt in OAuth payloads", () => {
-  const piDefaultPrompt =
-    "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.\n\nAvailable tools:\n- read\n- bash\n\n- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\n\n# Project Context\n\nThis is a test project.";
+  const piDefaultPrompt = [
+    "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.",
+    "",
+    "<tools>",
+    "- read: Read file contents",
+    "- bash: Execute shell commands",
+    "",
+    "In addition to the tools above, you may have access to other custom tools depending on the project.",
+    "</tools>",
+    "",
+    "<project_context>",
+    "This is a test project.",
+    "</project_context>",
+  ].join("\n");
   const payload = createOAuthPayload({
     system: [
       {
@@ -320,7 +332,7 @@ test("shapes Pi default system prompt in OAuth payloads", () => {
   assert.ok(
     systemBlocks[2]?.text.startsWith("You are an expert coding assistant.\n"),
   );
-  assert.ok(systemBlocks[2]?.text.includes("# Project Context"));
+  assert.ok(systemBlocks[2]?.text.includes("<project_context>"));
   assert.ok(systemBlocks[2]?.text.includes("This is a test project."));
   assert.ok(
     !systemBlocks[2]?.text.includes(
@@ -330,8 +342,13 @@ test("shapes Pi default system prompt in OAuth payloads", () => {
 });
 
 test("shapes the Pi default system prompt preamble when present", () => {
-  const piDefaultPrompt =
-    "You are an expert coding assistant operating inside pi, a coding agent harness. You help users.";
+  const piDefaultPrompt = [
+    "You are an expert coding assistant operating inside pi, a coding agent harness. You help users.",
+    "",
+    "<rules>",
+    "- Be concise in your responses",
+    "</rules>",
+  ].join("\n");
   const payload = {
     model: TEST_MODEL,
     stream: true,

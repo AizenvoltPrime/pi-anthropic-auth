@@ -2,10 +2,15 @@ import assert from "node:assert/strict";
 import { onTestFinished, test, vi } from "vitest";
 
 import {
-  PARAGRAPH_REMOVAL_ANCHORS,
   PI_DEFAULT_PROMPT_PREFIX,
-  PI_DEFAULT_PROMPT_TERMINATOR,
+  PI_DOCS_SECTION_ANCHOR,
+  PI_OWNED_SECTIONS,
+  PI_TOOLS_FILLER_ANCHOR,
 } from "#src/constants";
+import {
+  parseSystemPromptChunks,
+  renderSystemPromptChunks,
+} from "#src/system-prompt-sections";
 import {
   _resetShapingWarnings,
   shapeAnthropicOAuthSystemPrompt,
@@ -29,12 +34,13 @@ import {
 import { buildSystemPrompt } from "../node_modules/@earendil-works/pi-coding-agent/dist/core/system-prompt.js";
 
 // ---------------------------------------------------------------------------
-// Upstream anchor drift check
+// Upstream prompt drift check
 //
-// `src/constants.ts` holds five strings copied verbatim out of pi's default
-// system prompt.  Nothing else in the suite verifies they still match the
-// installed pi, so drift surfaces at request time — a `console.warn` on stderr
-// mid-session for the terminator, and silence for a removal anchor.
+// `src/constants.ts` holds strings and section names copied verbatim out of
+// pi's default system prompt.  Nothing else in the suite verifies they still
+// match the installed pi, so drift surfaces at request time — a `console.warn`
+// on stderr mid-session when no section is recognized, and silence when only
+// one anchor goes stale.
 //
 // This is the one file in the suite that deliberately imports a Pi internal
 // rather than building a fixture inline (see AGENTS.md Testing Guidance):
@@ -73,55 +79,73 @@ test("PI_DEFAULT_PROMPT_PREFIX still opens the installed pi's default prompt", (
   assert.ok(
     built.startsWith(PI_DEFAULT_PROMPT_PREFIX),
     "PI_DEFAULT_PROMPT_PREFIX no longer opens the prompt the installed pi builds. " +
-      "Shaping would pass every OAuth request through untouched. " +
+      "Shaping would leave pi's identity paragraph in every OAuth request. " +
       "Re-verify the constant against buildSystemPrompt in @earendil-works/pi-coding-agent.",
   );
 });
 
-test("PI_DEFAULT_PROMPT_TERMINATOR still ends the installed pi's preamble", () => {
-  const built = buildUpstreamPrompt();
-  const terminatorIdx = built.indexOf(PI_DEFAULT_PROMPT_TERMINATOR);
+test("the installed pi still emits every section shaping keys on", () => {
+  const chunks = parseSystemPromptChunks(buildUpstreamPrompt());
+  const names = chunks.map((chunk) => chunk.name);
 
-  assert.notEqual(
-    terminatorIdx,
-    -1,
-    "PI_DEFAULT_PROMPT_TERMINATOR no longer appears in the prompt the installed pi builds. " +
-      "Shaping would degrade to whole-prompt sanitization. " +
-      "Re-verify the constant against buildSystemPrompt in @earendil-works/pi-coding-agent.",
-  );
-  assert.ok(
-    terminatorIdx > built.indexOf(PI_DEFAULT_PROMPT_PREFIX),
-    "PI_DEFAULT_PROMPT_TERMINATOR must appear after PI_DEFAULT_PROMPT_PREFIX; " +
-      "shaping searches for it from the prefix onwards.",
+  assert.equal(
+    names[0],
+    null,
+    "the installed pi no longer opens its prompt with untagged preamble text. " +
+      "Shaping offers only the first untagged chunk to the preamble rule, so the " +
+      "Pi identity would survive. Re-verify against buildSystemPromptSections.",
   );
 
-  // Scoped to the boundary claim rather than the whole tail: what matters is
-  // that no Pi-generated text survives between the terminator and the content
-  // pi appends, not how that appended content is formatted.
-  assert.ok(
-    built
-      .slice(terminatorIdx + PI_DEFAULT_PROMPT_TERMINATOR.length)
-      .startsWith(`\n\n${APPENDED_NOTE}`),
-    "PI_DEFAULT_PROMPT_TERMINATOR no longer ends the preamble — pi emits more of its own " +
-      "text after it, which shaping would leave in the OAuth request. Re-verify the constant.",
-  );
-});
-
-test("every PARAGRAPH_REMOVAL_ANCHORS entry still matches a paragraph", () => {
-  // Same split the sanitizer uses, so a match here means a match there.
-  const paragraphs = buildUpstreamPrompt().split(/\n\n+/);
-
-  for (const anchor of PARAGRAPH_REMOVAL_ANCHORS) {
+  for (const section of PI_OWNED_SECTIONS) {
     assert.ok(
-      paragraphs.some((paragraph) => paragraph.includes(anchor)),
-      `PARAGRAPH_REMOVAL_ANCHORS entry ${JSON.stringify(anchor)} no longer matches any ` +
-        "paragraph of the prompt the installed pi builds. The paragraph it targeted would " +
-        "survive into shaped OAuth requests. Re-verify the anchor.",
+      names.includes(section),
+      `PI_OWNED_SECTIONS entry ${JSON.stringify(section)} is not a section the installed ` +
+        "pi emits. Shaping uses these names to recognize pi's own prompt, so a stale " +
+        "entry moves it toward the degraded passthrough path. Re-verify the constant.",
     );
   }
 });
 
-test("shaping the installed pi's prompt takes the terminator path", () => {
+test("PI_DOCS_SECTION_ANCHOR still matches the installed pi's docs section", () => {
+  const docs = parseSystemPromptChunks(buildUpstreamPrompt()).find(
+    (chunk) => chunk.name === "docs",
+  );
+
+  assert.ok(docs, "the installed pi emits no docs section");
+  assert.ok(
+    docs.body.includes(PI_DOCS_SECTION_ANCHOR),
+    "PI_DOCS_SECTION_ANCHOR no longer matches the docs section the installed pi builds. " +
+      "The whole Pi documentation block would survive into shaped OAuth requests. " +
+      "Re-verify the anchor.",
+  );
+});
+
+test("PI_TOOLS_FILLER_ANCHOR still matches the installed pi's tools section", () => {
+  const tools = parseSystemPromptChunks(buildUpstreamPrompt()).find(
+    (chunk) => chunk.name === "tools",
+  );
+
+  assert.ok(tools, "the installed pi emits no tools section");
+  assert.ok(
+    tools.body.includes(PI_TOOLS_FILLER_ANCHOR),
+    "PI_TOOLS_FILLER_ANCHOR no longer matches the tools section the installed pi builds. " +
+      "The custom-tool filler sentence would survive into shaped OAuth requests. " +
+      "Re-verify the anchor.",
+  );
+});
+
+test("the parser round-trips the installed pi's prompt byte-for-byte", () => {
+  const built = buildUpstreamPrompt();
+
+  assert.equal(
+    renderSystemPromptChunks(parseSystemPromptChunks(built)),
+    built,
+    "parsing and re-rendering the prompt the installed pi builds is not lossless, " +
+      "so shaping would corrupt content it means to pass through untouched.",
+  );
+});
+
+test("shaping the installed pi's prompt takes the section path", () => {
   // The latch is module-global, so a warning tripped earlier in this file would
   // suppress the one this test is watching for.
   _resetShapingWarnings();
@@ -136,7 +160,7 @@ test("shaping the installed pi's prompt takes the terminator path", () => {
   assert.equal(
     warnSpy.mock.calls.length,
     0,
-    "shaping the prompt the installed pi builds degraded to the sanitize-fallback path. " +
+    "shaping the prompt the installed pi builds degraded to the passthrough path. " +
       "This is the mid-session stderr warning, caught at build time instead.",
   );
 
@@ -144,13 +168,18 @@ test("shaping the installed pi's prompt takes the terminator path", () => {
   assert.match(shaped, /^You are an expert coding assistant\./);
   assert.doesNotMatch(shaped, /operating inside pi, a coding agent harness/);
 
-  // Removed: the custom-tool filler and the whole Pi documentation block.
+  // Removed: the custom-tool filler and the whole Pi documentation section.
   assert.doesNotMatch(shaped, /In addition to the tools above/);
   assert.doesNotMatch(shaped, /Pi documentation \(read only/);
+  assert.doesNotMatch(shaped, /<docs>/);
+  assert.doesNotMatch(shaped, /<\/docs>/);
 
-  // Retained: tool snippets and the extension-contributed guideline.
-  assert.match(shaped, /- read: Read file contents/);
-  assert.match(shaped, /- bash: Execute shell commands/);
+  // Retained: the tools section itself, with its snippets.
+  assert.match(shaped, /<tools>/);
+  assert.match(shaped, new RegExp(`- read: ${FIXTURE_TOOL_SNIPPETS.read}`));
+  assert.match(shaped, new RegExp(`- bash: ${FIXTURE_TOOL_SNIPPETS.bash}`));
+
+  // Retained: the extension-contributed guideline.
   assert.ok(
     shaped.includes(`- ${EXTRA_GUIDELINE}`),
     "extension-contributed guidelines must survive shaping",
@@ -167,7 +196,37 @@ test("shaping the installed pi's prompt takes the terminator path", () => {
     "project context files must survive shaping",
   );
   assert.ok(
-    shaped.endsWith(`\nCurrent working directory: ${FIXTURE_CWD}`),
-    "the cwd footer must survive shaping as the prompt's last line",
+    shaped.endsWith(`<cwd>\n${FIXTURE_CWD}\n</cwd>`),
+    "the cwd section must survive shaping as the prompt's last section",
+  );
+});
+
+test("shaping leaves the installed pi's prompt tag-balanced", () => {
+  _resetShapingWarnings();
+  const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+  onTestFinished(() => {
+    warnSpy.mockRestore();
+    _resetShapingWarnings();
+  });
+
+  // Re-parsing is the balance check: a chunk whose tags no longer pair stops
+  // being a named section, so a stray tag shows up as untagged text.
+  const shaped = shapeAnthropicOAuthSystemPrompt(buildUpstreamPrompt());
+  const untagged = parseSystemPromptChunks(shaped).filter(
+    (chunk) => chunk.name === null,
+  );
+
+  assert.deepEqual(
+    untagged.map((chunk) => chunk.raw),
+    [
+      [
+        "You are an expert coding assistant.",
+        "Be concise and helpful.",
+        "Use the available tools to answer the user's request.",
+        "Show file paths clearly when working with files.",
+      ].join("\n"),
+    ],
+    "the only untagged chunk of the shaped prompt must be the minimal preamble; " +
+      "anything else is an orphaned or unclosed section tag.",
   );
 });
