@@ -270,7 +270,10 @@ test("experiment: Pi serializer preserves interleaved thinking between tool_use 
   ]);
 });
 
-test("experiment: current hook reshaping splits assistant tool_use blocks from trailing text", () => {
+test("shaping leaves assistant text trailing tool_use blocks in place", () => {
+  // Anthropic accepts this ordering; measured 200 OK across every model this
+  // extension serves, which is why the split that used to rewrite it is gone
+  // (Issue #66).
   const blockTypes = shapedAssistantBlockTypes(
     [
       {
@@ -311,10 +314,10 @@ test("experiment: current hook reshaping splits assistant tool_use blocks from t
     ],
   );
 
-  assert.deepEqual(blockTypes, [["text"], ["tool_use", "tool_use"]]);
+  assert.deepEqual(blockTypes, [["tool_use", "tool_use", "text"]]);
 });
 
-test("experiment: current hook reshaping leaves already-valid assistant ordering unchanged", () => {
+test("shaping leaves text-first assistant ordering unchanged", () => {
   const blockTypes = shapedAssistantBlockTypes([
     {
       type: "text",
@@ -335,4 +338,51 @@ test("experiment: current hook reshaping leaves already-valid assistant ordering
   ]);
 
   assert.deepEqual(blockTypes, [["text", "tool_use", "tool_use"]]);
+});
+
+test("shaping preserves interleaved thinking blocks in an assistant turn", () => {
+  // Anthropic signs `thinking` blocks and rejects the next request when the
+  // latest assistant turn's signed blocks move relative to the content they
+  // were produced against (Issue #66).  Shaping must leave the turn alone.
+  const blockTypes = shapedAssistantBlockTypes(
+    [
+      { type: "thinking", thinking: "t1", signature: "sig-1" },
+      {
+        type: "tool_use",
+        id: "toolu_1",
+        name: "Read",
+        input: { filePath: "/root" },
+      },
+      { type: "thinking", thinking: "t2", signature: "sig-2" },
+      {
+        type: "tool_use",
+        id: "toolu_2",
+        name: "Glob",
+        input: { pattern: "**/*.pdf" },
+      },
+    ],
+    [
+      {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "toolu_1",
+            content: "ok",
+            is_error: false,
+          },
+          {
+            type: "tool_result",
+            tool_use_id: "toolu_2",
+            content: "No files found",
+            is_error: false,
+          },
+        ],
+      },
+    ],
+  );
+
+  assert.deepEqual(blockTypes, [
+    ["thinking", "tool_use", "thinking", "tool_use"],
+  ]);
 });

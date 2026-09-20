@@ -153,49 +153,6 @@ function prependBillingHeader(
 }
 
 /**
- * Splits assistant messages that interleave text and tool_use blocks.
- *
- * The Anthropic API rejects assistant turns where non-tool_use blocks follow
- * a tool_use block.  Pi's serializer can produce this ordering, so we split
- * the message into two consecutive assistant turns: one with text blocks and
- * one with tool_use blocks.  The reordering is safe because the text and
- * tool_use blocks are semantically independent within a single turn.
- */
-function splitAssistantToolUseTrailingContent(
-  messages: MessageParam[],
-): MessageParam[] {
-  return messages.flatMap((message) => {
-    if (message.role !== "assistant" || !Array.isArray(message.content)) {
-      return [message];
-    }
-
-    const firstToolUseIndex = message.content.findIndex(
-      (block) => block.type === "tool_use",
-    );
-    if (firstToolUseIndex === -1) {
-      return [message];
-    }
-
-    const trailingBlocks = message.content.slice(firstToolUseIndex);
-    if (!trailingBlocks.some((block) => block.type !== "tool_use")) {
-      return [message];
-    }
-
-    const nonToolUseBlocks = message.content.filter(
-      (block) => block.type !== "tool_use",
-    );
-    const toolUseBlocks = message.content.filter(
-      (block) => block.type === "tool_use",
-    );
-
-    return [
-      { ...message, content: nonToolUseBlocks },
-      { ...message, content: toolUseBlocks },
-    ];
-  });
-}
-
-/**
  * Applies system prompt shaping to `role: "system"` messages.
  *
  * Pi 0.86.0 re-sends changed prompt sections mid-conversation as system
@@ -282,6 +239,14 @@ function shouldLogRequestDebug(messages: MessageParam[]): boolean {
  * the request carries an `sk-ant-oat` access token.  We therefore do not
  * sniff system-prompt markers here; non-Anthropic-messages payloads are still
  * returned untouched as a structural guard.
+ *
+ * Assistant messages pass through unmodified.  We previously split assistant
+ * turns that carried non-tool_use blocks after a tool_use block, on the
+ * premise — ported from OpenCode, never verified here — that Anthropic
+ * rejects that ordering.  A live probe found it does not (see
+ * `docs/architecture.md`), while the split moved signed `thinking` blocks away
+ * from the content they were produced against, which Anthropic *does* reject
+ * (Issue #66).
  */
 export function shapeAnthropicOAuthPayload(payload: unknown): unknown {
   if (!isAnthropicMessagesPayload(payload)) {
@@ -289,9 +254,7 @@ export function shapeAnthropicOAuthPayload(payload: unknown): unknown {
   }
 
   const messages = payload.messages as MessageParam[];
-  const normalizedMessages = shapeSystemRoleMessages(
-    splitAssistantToolUseTrailingContent(messages),
-  );
+  const normalizedMessages = shapeSystemRoleMessages(messages);
 
   const shapedSystem = Array.isArray(payload.system)
     ? shapeSystemBlocks(payload.system as TextBlock[])
