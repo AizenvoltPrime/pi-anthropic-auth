@@ -7,22 +7,59 @@ import { test } from "vitest";
 import { shapeAnthropicOAuthPayload } from "#src/request-shaping";
 
 const TEST_MODEL = "claude-haiku-4-5";
+const USER_TEXT = "Check my home directory for PDFs.";
 
 /**
- * Reads the `type` of each content block on a message, asserting the message
- * exists first.
+ * Builds an Anthropic messages payload with one assistant turn under test.
  *
- * Indexing into a filtered array yields `T | undefined`, so reading `.content`
- * off it directly is an unsafe optional chain.  Asserting presence here keeps
- * the call sites terse and turns an out-of-range index into a clear failure.
+ * Every shaping assertion in this file differs only in that turn's content
+ * blocks (and, sometimes, a trailing tool_result message), so the surrounding
+ * envelope lives here rather than being restated per test.  This mirrors
+ * `createOAuthPayload` in `test/request-shaping.test.ts`.
  */
-function contentBlockTypes(
-  message: { content: unknown } | undefined,
-): string[] {
-  assert.ok(message, "expected a message at this index");
-  return (message.content as Array<{ type: string }>).map(
-    (block) => block.type,
-  );
+function createShapingPayload(
+  assistantContent: unknown[],
+  trailingMessages: unknown[] = [],
+) {
+  return {
+    model: TEST_MODEL,
+    stream: true,
+    messages: [
+      { role: "user", content: [{ type: "text", text: USER_TEXT }] },
+      { role: "assistant", content: assistantContent },
+      ...trailingMessages,
+    ],
+    system: [
+      {
+        type: "text",
+        text: "You are Claude Code, Anthropic's official CLI for Claude.",
+      },
+      {
+        type: "text",
+        text: "Follow the user's instructions.",
+      },
+    ],
+  };
+}
+
+/**
+ * Shapes a payload and reports the block types of each assistant message it
+ * emits, as one array per assistant message.
+ *
+ * Returning the nested shape lets a test pin both how many assistant messages
+ * shaping produced and what each one carries in a single assertion.
+ */
+function shapedAssistantBlockTypes(
+  assistantContent: unknown[],
+  trailingMessages: unknown[] = [],
+): string[][] {
+  const shaped = shapeAnthropicOAuthPayload(
+    createShapingPayload(assistantContent, trailingMessages),
+  ) as { messages: Array<{ role: string; content: Array<{ type: string }> }> };
+
+  return shaped.messages
+    .filter((message) => message.role === "assistant")
+    .map((message) => message.content.map((block) => block.type));
 }
 
 function createMockSseResponse(): Response {
@@ -173,35 +210,26 @@ test("experiment: Pi serializer preserves trailing assistant text after tool_use
 });
 
 test("experiment: current hook reshaping splits assistant tool_use blocks from trailing text", () => {
-  const payload = {
-    model: TEST_MODEL,
-    stream: true,
-    messages: [
+  const blockTypes = shapedAssistantBlockTypes(
+    [
       {
-        role: "user",
-        content: [{ type: "text", text: "Check my home directory for PDFs." }],
+        type: "tool_use",
+        id: "toolu_1",
+        name: "Read",
+        input: { filePath: "/root" },
       },
       {
-        role: "assistant",
-        content: [
-          {
-            type: "tool_use",
-            id: "toolu_1",
-            name: "Read",
-            input: { filePath: "/root" },
-          },
-          {
-            type: "tool_use",
-            id: "toolu_2",
-            name: "Glob",
-            input: { pattern: "**/*.pdf" },
-          },
-          {
-            type: "text",
-            text: "I checked your home directory and looked for PDF files.",
-          },
-        ],
+        type: "tool_use",
+        id: "toolu_2",
+        name: "Glob",
+        input: { pattern: "**/*.pdf" },
       },
+      {
+        type: "text",
+        text: "I checked your home directory and looked for PDF files.",
+      },
+    ],
+    [
       {
         role: "user",
         content: [
@@ -220,83 +248,30 @@ test("experiment: current hook reshaping splits assistant tool_use blocks from t
         ],
       },
     ],
-    system: [
-      {
-        type: "text",
-        text: "You are Claude Code, Anthropic's official CLI for Claude.",
-      },
-      {
-        type: "text",
-        text: "Follow the user's instructions.",
-      },
-    ],
-  };
-
-  const shaped = shapeAnthropicOAuthPayload(payload) as typeof payload;
-  const assistantMessages = shaped.messages.filter(
-    (message) => message.role === "assistant",
   );
 
-  assert.equal(assistantMessages.length, 2);
-  assert.deepEqual(contentBlockTypes(assistantMessages[0]), ["text"]);
-  assert.deepEqual(contentBlockTypes(assistantMessages[1]), [
-    "tool_use",
-    "tool_use",
-  ]);
+  assert.deepEqual(blockTypes, [["text"], ["tool_use", "tool_use"]]);
 });
 
 test("experiment: current hook reshaping leaves already-valid assistant ordering unchanged", () => {
-  const payload = {
-    model: TEST_MODEL,
-    stream: true,
-    messages: [
-      {
-        role: "user",
-        content: [{ type: "text", text: "Check my home directory for PDFs." }],
-      },
-      {
-        role: "assistant",
-        content: [
-          {
-            type: "text",
-            text: "I checked your home directory and looked for PDF files.",
-          },
-          {
-            type: "tool_use",
-            id: "toolu_1",
-            name: "Read",
-            input: { filePath: "/root" },
-          },
-          {
-            type: "tool_use",
-            id: "toolu_2",
-            name: "Glob",
-            input: { pattern: "**/*.pdf" },
-          },
-        ],
-      },
-    ],
-    system: [
-      {
-        type: "text",
-        text: "You are Claude Code, Anthropic's official CLI for Claude.",
-      },
-      {
-        type: "text",
-        text: "Follow the user's instructions.",
-      },
-    ],
-  };
-
-  const shaped = shapeAnthropicOAuthPayload(payload) as typeof payload;
-  const assistantMessages = shaped.messages.filter(
-    (message) => message.role === "assistant",
-  );
-
-  assert.equal(assistantMessages.length, 1);
-  assert.deepEqual(contentBlockTypes(assistantMessages[0]), [
-    "text",
-    "tool_use",
-    "tool_use",
+  const blockTypes = shapedAssistantBlockTypes([
+    {
+      type: "text",
+      text: "I checked your home directory and looked for PDF files.",
+    },
+    {
+      type: "tool_use",
+      id: "toolu_1",
+      name: "Read",
+      input: { filePath: "/root" },
+    },
+    {
+      type: "tool_use",
+      id: "toolu_2",
+      name: "Glob",
+      input: { pattern: "**/*.pdf" },
+    },
   ]);
+
+  assert.deepEqual(blockTypes, [["text", "tool_use", "tool_use"]]);
 });
