@@ -397,3 +397,190 @@ test("shapes OAuth payloads detected by the minimal neutral system prompt marker
   );
   assert.equal(systemBlocks[1]?.text, payload.system[0]?.text);
 });
+
+// ===== mid-conversation system messages (Issue #69) =====
+//
+// Pi 0.86.0 re-sends changed prompt sections as `role: "system"` messages
+// inside `messages[]` on models with `supportsMidConvoSystemMessages`
+// (claude-fable-5, claude-fable-5-1, claude-opus-4-8, claude-opus-5).
+// `renderSystemMessageUpdate` frames each one by section name, so the same
+// Pi content the sanitizer strips from `system[]` arrives by a second route.
+
+/** Frame a section update the way upstream `renderSystemMessageUpdate` does. */
+function sectionUpdate(name: string, body: string): string {
+  return `Updated system prompt section "${name}":\n\n<${name}>\n${body}\n</${name}>`;
+}
+
+const PI_DOCS_UPDATE_BODY = [
+  "Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):",
+  "- Main documentation: /home/user/.pi/agent/README.md",
+].join("\n");
+
+/** Build an OAuth payload carrying one `role: "system"` message. */
+function payloadWithSystemMessage(content: unknown) {
+  return createOAuthPayload({
+    messages: [
+      {
+        role: "user",
+        content: [{ type: "text", text: "Please summarize the repository." }],
+      },
+      { role: "system", content },
+    ],
+  });
+}
+
+function shapedMessages(payload: unknown): Array<Record<string, unknown>> {
+  const shaped = shapeAnthropicOAuthPayload(payload) as {
+    messages: Array<Record<string, unknown>>;
+  };
+  return shaped.messages;
+}
+
+/** Text of the first content block of `messages[index]`. */
+function blockText(
+  messages: Array<Record<string, unknown>>,
+  index: number,
+): string | undefined {
+  const content = messages[index]?.content;
+  if (!Array.isArray(content)) return undefined;
+  const block: unknown = content[0];
+  return typeof block === "object" && block !== null && "text" in block
+    ? (block as { text: string }).text
+    : undefined;
+}
+
+test("drops a mid-conversation docs section update entirely", () => {
+  const messages = shapedMessages(
+    payloadWithSystemMessage([
+      { type: "text", text: sectionUpdate("docs", PI_DOCS_UPDATE_BODY) },
+    ]),
+  );
+
+  assert.deepEqual(
+    messages.map((message) => message.role),
+    ["user"],
+    "a system message left with no content must be dropped, not sent empty",
+  );
+});
+
+test("strips the filler from a mid-conversation tools section update", () => {
+  const body = [
+    "- read: Read file contents",
+    "",
+    "In addition to the tools above, you may have access to other custom tools depending on the project.",
+  ].join("\n");
+  const messages = shapedMessages(
+    payloadWithSystemMessage([
+      { type: "text", text: sectionUpdate("tools", body) },
+    ]),
+  );
+
+  assert.equal(
+    blockText(messages, 1),
+    sectionUpdate("tools", "- read: Read file contents"),
+    "the update keeps its framing and section tags; only the filler goes",
+  );
+});
+
+test("replaces a mid-conversation preamble update carrying the Pi identity", () => {
+  // `diffSystemPromptSections` iterates every section including `preamble`,
+  // which upstream renders untagged, so the identity can arrive this way too.
+  const messages = shapedMessages(
+    payloadWithSystemMessage([
+      {
+        type: "text",
+        text:
+          'Updated system prompt section "preamble":\n\n' +
+          "You are an expert coding assistant operating inside pi, a coding agent harness. You help users.",
+      },
+    ]),
+  );
+
+  const text = blockText(messages, 1) ?? "";
+  assert.doesNotMatch(text, /operating inside pi, a coding agent harness/);
+  assert.ok(text.includes("You are an expert coding assistant.\n"));
+});
+
+test("keeps a mid-conversation update for a section it does not own", () => {
+  const update = sectionUpdate("project_context", "Team guidance.");
+  const messages = shapedMessages(
+    payloadWithSystemMessage([{ type: "text", text: update }]),
+  );
+
+  assert.equal(blockText(messages, 1), update);
+});
+
+test("keeps non-text blocks when a system message's only text block is dropped", () => {
+  const messages = shapedMessages(
+    payloadWithSystemMessage([
+      { type: "text", text: sectionUpdate("docs", PI_DOCS_UPDATE_BODY) },
+      { type: "tool_addition", tool: { type: "tool_reference", name: "Read" } },
+    ]),
+  );
+
+  assert.deepEqual(
+    messages.map((message) => message.role),
+    ["user", "system"],
+  );
+  assert.deepEqual(messages[1]?.content, [
+    { type: "tool_addition", tool: { type: "tool_reference", name: "Read" } },
+  ]);
+});
+
+test("drops only the docs part of a multi-section update", () => {
+  const toolsUpdate = sectionUpdate("tools", "- read: Read file contents");
+  const messages = shapedMessages(
+    payloadWithSystemMessage([
+      {
+        type: "text",
+        text: `${sectionUpdate("docs", PI_DOCS_UPDATE_BODY)}\n\n${toolsUpdate}`,
+      },
+    ]),
+  );
+
+  assert.equal(
+    blockText(messages, 1),
+    toolsUpdate,
+    "the surviving part keeps its own framing and the dropped one leaves none behind",
+  );
+});
+
+test("drops a removal notice for pi's own docs section", () => {
+  const messages = shapedMessages(
+    payloadWithSystemMessage([
+      { type: "text", text: 'Removed system prompt section "docs".' },
+    ]),
+  );
+
+  assert.deepEqual(
+    messages.map((message) => message.role),
+    ["user"],
+    "we never sent pi's docs section, so its removal notice names nothing the model has",
+  );
+});
+
+test("leaves a system message with plain text untouched", () => {
+  const messages = shapedMessages(
+    payloadWithSystemMessage([
+      { type: "text", text: "Some unframed system note." },
+    ]),
+  );
+
+  assert.equal(blockText(messages, 1), "Some unframed system note.");
+});
+
+test("leaves user and assistant messages untouched", () => {
+  const update = sectionUpdate("docs", PI_DOCS_UPDATE_BODY);
+  const payload = createOAuthPayload({
+    messages: [
+      { role: "user", content: [{ type: "text", text: update }] },
+      { role: "assistant", content: [{ type: "text", text: update }] },
+    ],
+  });
+
+  const messages = shapedMessages(payload);
+
+  assert.equal(messages.length, 2);
+  assert.equal(blockText(messages, 0), update);
+  assert.equal(blockText(messages, 1), update);
+});

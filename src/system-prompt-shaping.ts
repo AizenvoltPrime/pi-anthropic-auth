@@ -32,6 +32,15 @@ export function _resetShapingWarnings(): void {
  */
 const PREAMBLE_SECTION = "preamble";
 
+/**
+ * The one section shaping removes outright rather than rewriting.
+ *
+ * Named once because two paths act on it: the leading prompt drops the
+ * section itself, and a mid-conversation update drops both the section and
+ * the notice announcing its removal.
+ */
+const DOCS_SECTION = "docs";
+
 /** What shaping does with one section of the prompt. */
 type SectionDecision =
   | { kind: "keep" }
@@ -140,7 +149,7 @@ function decideSection(
   if (name === PREAMBLE_SECTION && text.startsWith(PI_DEFAULT_PROMPT_PREFIX)) {
     return { kind: "replace", body: MINIMAL_ANTHROPIC_OAUTH_PROMPT };
   }
-  if (name === "docs" && text.includes(PI_DOCS_SECTION_ANCHOR)) {
+  if (name === DOCS_SECTION && text.includes(PI_DOCS_SECTION_ANCHOR)) {
     return { kind: "drop" };
   }
   if (name === "tools") {
@@ -192,6 +201,100 @@ function shouldLogStructuredDebug(report: StructuredShapingReport): boolean {
   return (
     report.droppedSections.length === 0 && report.replacementMatches.length > 0
   );
+}
+
+// ---------------------------------------------------------------------------
+// Mid-conversation section updates (Issue #69)
+//
+// On models that accept mid-conversation system messages, Pi re-sends changed
+// sections as `role: "system"` messages rather than rebuilding `system[]`.
+// `renderSystemMessageUpdate` frames each changed section by name, so the same
+// Pi content the sanitizer strips from the leading prompt arrives by a second
+// route.  These run the identical rule table over that envelope.
+// ---------------------------------------------------------------------------
+
+/**
+ * Matches the framing `renderSystemMessageUpdate` puts on each changed section.
+ *
+ * Group 1 names an updated section (its rendered value follows); group 2 names
+ * a removed one (the notice is the whole part).
+ */
+const SECTION_UPDATE_FRAME =
+  /^(?:Updated system prompt section "([a-z][a-z0-9_-]*)":\n\n|Removed system prompt section "([a-z][a-z0-9_-]*)"\.$)/gm;
+
+/**
+ * Shape the text of a mid-conversation system message.
+ *
+ * @returns the shaped text, or undefined when every framed part was dropped
+ *   and the block should not be sent at all.
+ */
+export function shapeSystemUpdateText(text: string): string | undefined {
+  const frames = [...text.matchAll(SECTION_UPDATE_FRAME)];
+  if (frames.length === 0) {
+    return text;
+  }
+
+  const parts: string[] = [];
+  const leading = text.slice(0, frames[0].index).trim();
+  if (leading) {
+    parts.push(leading);
+  }
+
+  for (const [index, frame] of frames.entries()) {
+    const partEnd = frames[index + 1]?.index ?? text.length;
+    const shaped = shapeUpdatePart(frame, text.slice(0, partEnd));
+    if (shaped !== undefined) {
+      parts.push(shaped);
+    }
+  }
+
+  return parts.length > 0 ? parts.join("\n\n") : undefined;
+}
+
+/**
+ * Apply the rule table to one framed part of a system message.
+ *
+ * @param frame - the framing match, whose groups name the section.
+ * @param through - the message text up to the end of this part; the part's own
+ *   value is what follows the framing.
+ * @returns the part's replacement text, or undefined when it is dropped.
+ */
+function shapeUpdatePart(
+  frame: RegExpExecArray,
+  through: string,
+): string | undefined {
+  const framing = frame[0];
+  // Only one of the two alternatives captures, so these are genuinely
+  // optional even though the array type does not say so.
+  const updatedSection = frame[1] as string | undefined;
+  const removedSection = frame[2] as string | undefined;
+
+  if (removedSection !== undefined) {
+    // We never forwarded pi's own docs section, so a notice retracting it
+    // names nothing the model was given.
+    return removedSection === DOCS_SECTION ? undefined : framing;
+  }
+  if (updatedSection === undefined) {
+    return framing;
+  }
+
+  const name = updatedSection;
+  const value = through.slice(frame.index + framing.length).trimEnd();
+  const section = parseSystemPromptChunks(value);
+  const tagged = section.length === 1 && section[0].name === name;
+  const body = tagged ? section[0].body : value;
+
+  const decision = decideSection(name, body, {
+    droppedSections: [],
+    replacedSections: [],
+    replacementMatches: [],
+  });
+  if (decision.kind === "drop") {
+    return undefined;
+  }
+
+  const shapedBody = decision.kind === "replace" ? decision.body : body;
+  return `${framing}${tagged ? namedSection(name, shapedBody).raw : shapedBody}`;
 }
 
 function warnPromptUnstructuredOnce(): void {

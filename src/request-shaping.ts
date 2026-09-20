@@ -6,7 +6,10 @@ import {
   resolveClaudeCodeVersion,
 } from "./constants";
 import { debugLog, isToolUseOnlyDebugEnabled } from "./debug";
-import { shapeSystemBlocks } from "./system-prompt-shaping";
+import {
+  shapeSystemBlocks,
+  shapeSystemUpdateText,
+} from "./system-prompt-shaping";
 
 type TextBlock = {
   type: "text";
@@ -192,6 +195,43 @@ function splitAssistantToolUseTrailingContent(
   });
 }
 
+/**
+ * Applies system prompt shaping to `role: "system"` messages.
+ *
+ * Pi 0.86.0 re-sends changed prompt sections mid-conversation as system
+ * messages inside `messages[]` on models that accept them, so Pi content the
+ * sanitizer strips from `system[]` would otherwise reach Anthropic by that
+ * second route (Issue #69).
+ *
+ * A message whose text blocks all shape away is dropped, since Anthropic
+ * rejects an empty `content` array.  Non-text blocks — the `tool_addition`
+ * and `tool_removal` entries a section update can carry — pass through, and
+ * keep their message alive.
+ */
+function shapeSystemRoleMessages(messages: MessageParam[]): MessageParam[] {
+  return messages.flatMap((message) => {
+    if (message.role !== "system" || !Array.isArray(message.content)) {
+      return [message];
+    }
+
+    const content = message.content.flatMap(shapeSystemMessageBlock);
+    return content.length > 0 ? [{ ...message, content }] : [];
+  });
+}
+
+function shapeSystemMessageBlock(block: MessageBlock): MessageBlock[] {
+  if (block.type !== "text" || typeof block.text !== "string") {
+    return [block];
+  }
+
+  const shaped = shapeSystemUpdateText(block.text);
+  return shaped === undefined ? [] : [{ ...block, text: shaped }];
+}
+
+function countSystemRoleMessages(messages: MessageParam[]): number {
+  return messages.filter((message) => message.role === "system").length;
+}
+
 function getToolDefinitionNames(payload: AnthropicPayload): string[] {
   const tools = payload.tools;
   if (!Array.isArray(tools)) {
@@ -249,7 +289,9 @@ export function shapeAnthropicOAuthPayload(payload: unknown): unknown {
   }
 
   const messages = payload.messages as MessageParam[];
-  const normalizedMessages = splitAssistantToolUseTrailingContent(messages);
+  const normalizedMessages = shapeSystemRoleMessages(
+    splitAssistantToolUseTrailingContent(messages),
+  );
 
   const shapedSystem = Array.isArray(payload.system)
     ? shapeSystemBlocks(payload.system as TextBlock[])
@@ -270,6 +312,8 @@ export function shapeAnthropicOAuthPayload(payload: unknown): unknown {
         : 0,
       assistantMessagesBefore: countAssistantMessages(messages),
       assistantMessagesAfter: countAssistantMessages(normalizedMessages),
+      systemMessagesBefore: countSystemRoleMessages(messages),
+      systemMessagesAfter: countSystemRoleMessages(normalizedMessages),
       toolDefinitions: getToolDefinitionNames(payload),
       toolUseNamesBefore,
       toolUseNamesAfter,
