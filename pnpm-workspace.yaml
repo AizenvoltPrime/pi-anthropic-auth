@@ -3,6 +3,15 @@ allowBuilds:
   esbuild: true
   koffi: true
   protobufjs: true
+# pnpm's minimumReleaseAgeExclude is not honored under `pnpm install
+# --frozen-lockfile` (the install CI uses) -- open upstream bugs:
+# https://github.com/pnpm/pnpm/issues/11203, #11881, #10266, #10361.
+# A per-package exclude that works locally therefore still fails CI on a
+# fresh runner until real wall-clock time passes.  A short buffer below
+# pnpm's 1440-minute (24h) default absorbs that gap for same-day releases
+# of packages we author/review ourselves (pi-*), while still requiring
+# every dependency to be at least an hour old before pnpm will install it.
+minimumReleaseAge: 60
 minimumReleaseAgeExclude:
   - '@rumdl/cli-darwin-arm64@0.2.14'
   - '@rumdl/cli-darwin-x64@0.2.14'
