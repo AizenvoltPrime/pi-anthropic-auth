@@ -37,3 +37,35 @@ The plan closes #67, #68, and #69 in one breaking `3.0.0` release.
 - **Measured baselines recorded in the plan:** 64 tests across 8 files green, `pnpm run check` green on 0.84.0, and 2 tag-balance defects in the 0.86.0 shaped output.
   The post-change test count is labelled an estimate; the tag-balance target (0) is the gate.
 - No follow-up issues filed — nothing the plan names is deferred work rather than an open question about the fix's motivation.
+
+## Stage: Implementation — TDD (2026-09-20T16:08:00Z)
+
+### Session summary
+
+Landed the section-aware sanitizer across five TDD cycles plus one Tidy-First preparatory commit, closing #67, #68, and #69 in one breaking change (peer floor `>=0.86.0`).
+Tests went from 64 across 8 files to 88 across 10; nine anchor-path tests were deleted and every invariant they pinned was re-expressed against the sectioned shape.
+All deterministic gates pass, and both code-touching steps were verified live against pi 0.86.0 through the real `jiti` loader.
+
+### Observations
+
+- **The Tidy-First assessor earned its keep.**
+  It found that `test/system-prompt-shaping.test.ts` and `test/upstream-prompt-drift.test.ts` were already keeping three literals in sync by copy-paste discipline, and that the rewrite would tighten that coupling further.
+  `test/system-prompt-fixture-parts.ts` (literals only — `buildSystemPrompt` stays imported solely by the drift test, preserving the AGENTS.md "one sanctioned exception" boundary) landed first and both rewrites built on it.
+- **The tag-balance pin was proven by mutation, not assumed.**
+  Running the *old* anchor path over the 0.86.0 fixture through the same `unbalancedTags` helper yields exactly `["<tools>", "</docs>"]` — reproducing the issue's reported defect count of 2 — where the new path yields `[]`.
+  A `"the fixture is well-formed before shaping"` test guards the assertion from false-greening on an already-unbalanced fixture.
+  The helper itself had a real bug on first write (its open-tag regex rejected attribute-bearing tags while the close regex accepted them, so `</project_instructions>` counted as an orphan); the failing run caught it.
+- **The plan's "three issues cannot land independently" analysis held exactly.**
+  Bumping devDeps produced precisely the two `tsc` errors #68 predicted, and the drift canary could not be green on both sides of the shape boundary.
+  Front-loading the parser and rule table as unconsumed additions (steps 1–2) did shrink the cutover to mostly deletion: `c68eb2e` is 1325 insertions / 1815 deletions, net negative.
+- **`pnpm clean --lockfile` side effects were larger than the AGENTS.md note suggests.**
+  Beyond clearing the age gate it moved biome 2.5.7 → 2.5.14 (schema migration required) *and* vite 8.2 → 8.3, which promoted `esbuild` from an unsatisfied optional peer to a real dependency needing an `allowBuilds` entry.
+  Worth adding the esbuild case to the gotcha if it recurs.
+- **Deviation: one public entry point, not two.**
+  The plan had step 2 export `shapeStructuredSystemPrompt` alongside the old `shapeAnthropicOAuthSystemPrompt`; step 3 renamed rather than kept both, so the module still exposes a single shaping function.
+- **Open Question 2 resolved as yes:** `PI_OWNED_SECTIONS` includes `rules`, because the same set serves the structure guard and the `TEXT_REPLACEMENTS` scope.
+- **Found during implementation, not planning:** `decideSection` needed a `withBody` helper because replacing the *untagged* preamble must not wrap it in `<preamble>` tags — `namedSection` is right for every other section and wrong for that one.
+- **Unplanned cascade, folded into the cutover commit:** two `test/request-shaping.test.ts` cases used pre-0.86 flat fixtures and began passing through untouched (correctly) once the degraded path landed; both were reshaped to the sectioned form.
+- **Pre-completion reviewer: WARN** — one finding, an orphaned docblock in `src/constants.ts` left behind by the deleted `PARAGRAPH_REMOVAL_ANCHORS` (the exact tombstone-comment pattern `code-design` warns about).
+  Fixed and amended into the docs commit, with a follow-up grep for related stale prose.
+  The reviewer independently re-verified all five "Invariants at Risk" as still pinned.
