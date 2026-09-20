@@ -10,6 +10,16 @@ import {
   _resetShapingWarnings,
   shapeAnthropicOAuthSystemPrompt,
 } from "#src/system-prompt-shaping";
+import {
+  APPENDED_NOTE,
+  APPENDED_SYSTEM_PROMPT,
+  EXTRA_GUIDELINE,
+  FIXTURE_CONTEXT_FILE_PATH,
+  FIXTURE_CWD,
+  FIXTURE_SELECTED_TOOLS,
+  FIXTURE_TOOL_SNIPPETS,
+  PROJECT_INSTRUCTION,
+} from "#test/system-prompt-fixture-parts";
 // `buildSystemPrompt` is not listed in pi's `exports` map, which declares only
 // `.`, `./rpc-entry`, and `./client`.  The bare subpath specifier is therefore
 // rejected by Node (ERR_PACKAGE_PATH_NOT_EXPORTED) and by vite's resolver
@@ -36,10 +46,6 @@ import { buildSystemPrompt } from "../node_modules/@earendil-works/pi-coding-age
 // drifted", and both should stop a dependency bump.
 // ---------------------------------------------------------------------------
 
-const APPENDED_NOTE = "## Custom Note (from another extension)";
-const PROJECT_INSTRUCTION = "Preserve built-in Anthropic behavior by default.";
-const EXTRA_GUIDELINE = "Always check the frobnicator before deploying";
-
 /**
  * Build a prompt with the installed pi's own builder, using the full option
  * set so the preamble is surrounded by the same appended sections a real
@@ -50,16 +56,13 @@ const EXTRA_GUIDELINE = "Always check the frobnicator before deploying";
  */
 function buildUpstreamPrompt(): string {
   return buildSystemPrompt({
-    cwd: "/tmp/project",
-    selectedTools: ["read", "bash"],
-    toolSnippets: {
-      read: "Read file contents",
-      bash: "Execute shell commands",
-    },
+    cwd: FIXTURE_CWD,
+    selectedTools: FIXTURE_SELECTED_TOOLS,
+    toolSnippets: FIXTURE_TOOL_SNIPPETS,
     promptGuidelines: [EXTRA_GUIDELINE],
-    appendSystemPrompt: `${APPENDED_NOTE}\n- Some critical project instruction.`,
+    appendSystemPrompt: APPENDED_SYSTEM_PROMPT,
     contextFiles: [
-      { path: "/tmp/project/AGENTS.md", content: PROJECT_INSTRUCTION },
+      { path: FIXTURE_CONTEXT_FILE_PATH, content: PROJECT_INSTRUCTION },
     ],
   });
 }
@@ -163,5 +166,8 @@ test("shaping the installed pi's prompt takes the terminator path", () => {
     shaped.includes(PROJECT_INSTRUCTION),
     "project context files must survive shaping",
   );
-  assert.match(shaped, /\nCurrent working directory: \/tmp\/project$/);
+  assert.ok(
+    shaped.endsWith(`\nCurrent working directory: ${FIXTURE_CWD}`),
+    "the cwd footer must survive shaping as the prompt's last line",
+  );
 });
