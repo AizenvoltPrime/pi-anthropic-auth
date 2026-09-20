@@ -26,6 +26,9 @@ Pi's own extra-usage warning still appears on every Anthropic OAuth session and 
 
 ## Install
 
+Requires Pi 0.86.0 or newer.
+Pi 0.86.0 restructured its system prompt into XML-tagged sections, and this extension shapes that structure directly; the `2.x` line supports Pi 0.80.8 through 0.85.x.
+
 ```bash
 pi install npm:@gotgenes/pi-anthropic-auth
 ```
@@ -153,7 +156,7 @@ To fix this, either:
 ### Requirements
 
 - `pnpm`
-- a local `pi` installation
+- a local `pi` installation, version 0.86.0 or newer
 - Anthropic OAuth credentials configured through Pi
 
 ### Commands

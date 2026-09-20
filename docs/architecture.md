@@ -69,9 +69,9 @@ The dashed lane is unshaped: it reaches the same built-in transport, but without
 The wrapper delegates to Pi's built-in Anthropic `streamSimple` transport, resolved at runtime by `src/host-transport.ts` rather than read out of the API registry.
 `anthropicMessagesApi()` is the direct, non-deprecated handle pi's own `custom-provider-gitlab-duo` example delegates through, and reading from a registry this extension does not participate in would bind the delegate to whatever another extension registered there last.
 On pi <=0.80.7 the rationale was stronger still: `registerProvider` wrote our wrapper into that registry, so reading the delegate back out of it would have recursed.
-The related Issue #28 lazy-registration clobber is precluded by the `>=0.80.8` peer floor.
+The related Issue #28 lazy-registration clobber is precluded by the `>=0.86.0` peer floor.
 The resolver imports `@earendil-works/pi-ai/compat` — the subpath pi's own `custom-provider-gitlab-duo` example delegates through — and reads the non-deprecated `anthropicMessagesApi().streamSimple` factory, throwing when that handle is absent.
-It consults no other handle: the factory has shipped from the compat entrypoint since pi v0.80.0, below the `>=0.80.8` peer floor, so the former fallback to the deprecated `streamSimpleAnthropic` alias could not be reached by any supported host and was removed (Issue #54).
+It consults no other handle: the factory has shipped from the compat entrypoint since pi v0.80.0, below the `>=0.86.0` peer floor, so the former fallback to the deprecated `streamSimpleAnthropic` alias could not be reached by any supported host and was removed (Issue #54).
 On pi >=0.80.8 the host loader aliases (Node) / virtualizes (Bun) both the bare `@earendil-works/pi-ai` specifier and the `/compat` subpath to its bundled compat entrypoint (`dist/compat.js`); the subpath names the surface we actually depend on.
 A loader-aliased specifier is required because `import.meta.resolve` and non-aliased subpath imports bypass that host indirection: jiti consults its `alias`/`virtualModules` maps on the import path but not on the `resolve` path, so the former `import.meta.resolve("@earendil-works/pi-ai")` plus derived `dist/...` file import fell through to filesystem resolution from the extension's own directory and failed when pi-ai was absent from it — the `pi install` and Bun-binary cases (Issue #31).
 The #35 seam concern is resolved in practice: the loader aliases `/compat` in both modes and pi ships this delegation pattern as an official example.
@@ -90,8 +90,9 @@ This replaces the previous, brittle approach of sniffing system-prompt markers a
 For OAuth requests, the injected `onPayload` runs `shapeAnthropicOAuthPayload`, which:
 
 1. normalizes assistant message ordering when Pi serializes `[tool_use..., text]` for Anthropic,
-2. sanitizes Pi's default preamble by anchor (de-fingerprinting) — removing the identity, custom-tool filler, and Pi documentation paragraphs, replacing only the identity with a minimal neutral prompt, and preserving tool snippets, guidelines, and appended content — and
-3. prepends an `x-anthropic-billing-header` system block (without `cache_control`).
+2. sanitizes Pi's default prompt section by section (de-fingerprinting) — replacing the untagged preamble with a minimal neutral prompt, dropping the `docs` section, and stripping the custom-tool filler from inside `tools`, while preserving every other section byte-identically,
+3. applies those same section rules to the mid-conversation `role: "system"` messages Pi 0.86.0 re-sends on models that accept them (Issue #69), and
+4. prepends an `x-anthropic-billing-header` system block (without `cache_control`).
 
 The wrapper composes, rather than replaces, any caller-provided `onPayload`.
 On the main loop, Pi still passes its own `onPayload` (which fires other extensions' `before_provider_request` handlers); the wrapper runs those first and applies our shaping last, closest to the wire.
@@ -120,7 +121,7 @@ setDefaultStreamFn(streamSimple);
 That default resolves the transport from pi-ai's api registry, which still holds the built-in Anthropic transport.
 Up to pi 0.80.7, `ModelRegistry.applyProviderConfig` bridged an extension's `streamSimple` into that registry via `registerApiProvider`, so those calls reached the wrapper too.
 pi 0.80.8 replaced `ModelRegistry` with `ModelRuntime` and dropped the bridge; no file in `pi-coding-agent`'s `dist/` has called `registerApiProvider` since.
-Because 0.80.8 is this package's peer floor, the bridge is absent on every host version this extension supports.
+Because this package's peer floor is well above 0.80.8, the bridge is absent on every host version this extension supports.
 
 An Anthropic OAuth request on that lane carries no Claude Code billing header and comes back as `You're out of extra usage.` — a billing message for what is really a coverage gap.
 
@@ -185,5 +186,6 @@ Upstream draws the same distinction: `agent-session.ts` branches on `this.agent.
   See `docs/builtin-transport-seam-gap.md` for why no resolution handle is both loader-safe and durable past pi-ai's `compat` removal, and the committed near-term direction.
 - `src/oauth-transport.ts` — the token-gated `streamSimple` wrapper.
 - `src/request-shaping.ts` — the shaping pipeline applied via `onPayload`.
-- `src/system-prompt-shaping.ts` — anchor-driven preamble sanitizer that preserves tool snippets, guidelines, and appended content.
+- `src/system-prompt-sections.ts` — parser for Pi's XML-sectioned system prompt; splits it into ordered chunks and renders them back byte-exactly, so an unrecognized section is copied rather than re-serialized (Issue #67).
+- `src/system-prompt-shaping.ts` — section-aware sanitizer that replaces Pi's preamble, drops the `docs` section, strips the `tools` filler, and preserves everything else.
 - `src/diagnostics.ts` — `ExtensionDiagnostics` value object, `formatDiagnosticsReport`, and `createStatusCommandHandler`; surfaced by the `/anthropic-auth:status` command registered in `src/index.ts`.

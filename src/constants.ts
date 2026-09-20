@@ -122,11 +122,6 @@ export const CLAUDE_CODE_ENTRYPOINT = "sdk-cli";
 // ---------------------------------------------------------------------------
 
 /**
- * Strings whose presence in a paragraph marks it as Pi-specific and droppable.
- *
- * Each entry is checked with `paragraph.includes(anchor)`.
- */
-/**
  * Names of the sections Pi generates itself in its default system prompt.
  *
  * Two uses: their presence is what tells shaping the prompt is Pi's own

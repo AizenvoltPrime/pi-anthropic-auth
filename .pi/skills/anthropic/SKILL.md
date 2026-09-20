@@ -92,7 +92,7 @@ This workflow has already been used successfully in this repo to validate:
 To check what shaping does to a real prompt, import upstream `buildSystemPrompt` from `./node_modules/@earendil-works/pi-coding-agent/dist/core/system-prompt.js`, build a realistic prompt, and pipe it through `shapeAnthropicOAuthSystemPrompt` to see the exact removed/retained split.
 Use a filesystem path, not the bare `@earendil-works/pi-coding-agent/dist/...` specifier — that subpath is absent from the package's `exports` map, so Node rejects it with `ERR_PACKAGE_PATH_NOT_EXPORTED` and vite's resolver rejects it too.
 Write the script in the repo root, not `/tmp` — relative `./node_modules` and `./src` imports resolve against the script's directory (Refs #10).
-The same technique is used by one test, `test/upstream-prompt-drift.test.ts`, to check the preamble anchors against the installed Pi (Issue #52); everywhere else tests still build fixtures inline (see Testing Guidance in `AGENTS.md`).
+The same technique is used by one test, `test/upstream-prompt-drift.test.ts`, to check the section names and anchors against the installed Pi (Issue #52); everywhere else tests still build fixtures inline (see Testing Guidance in `AGENTS.md`).
 
 ### 4. Probe Anthropic classifiers with organic data and independent trials
 
@@ -123,7 +123,8 @@ All request shaping runs in the transport wrapper (`src/oauth-transport.ts`), wh
 - `system[]` block ordering
 - cache-control adjustments
 - assistant message ordering normalization
-- system prompt de-fingerprinting (anchor-based removal of the Pi identity, custom-tool filler, and Pi documentation paragraphs; preserves tool snippets, guidelines, and appended content)
+- system prompt de-fingerprinting (section-aware: replaces the untagged preamble, drops the `docs` section, strips the `tools` filler; preserves every other section byte-identically)
+- the same section rules applied to mid-conversation `role: "system"` updates (Issue #69)
 
 Gate on the `sk-ant-oat` access-token prefix (`options.apiKey`), the same signal Pi uses internally.
 This covers the main loop and compaction; `agentLoop` background agents are confirmed uncovered on pi >=0.80.8 and are out of reach from here (Issue #46).
@@ -153,8 +154,10 @@ Do not "fix" that by calling `registerApiProvider` — the registry is keyed by 
 - `src/diagnostics.ts`
 - `src/oauth-transport.ts`
 - `src/request-shaping.ts`
+- `src/system-prompt-sections.ts`
 - `src/system-prompt-shaping.ts`
 - `test/pi-anthropic-ordering-experiment.test.ts`
+- `test/system-prompt-sections.test.ts`
 - `test/system-prompt-shaping.test.ts`
 - `test/upstream-prompt-drift.test.ts`
 
