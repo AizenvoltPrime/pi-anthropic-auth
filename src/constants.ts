@@ -133,6 +133,33 @@ export const CLAUDE_CODE_ENTRYPOINT = "sdk-cli";
  *
  * Each entry is checked with `paragraph.includes(anchor)`.
  */
+/**
+ * Names of the sections Pi generates itself in its default system prompt.
+ *
+ * Two uses: their presence is what tells shaping the prompt is Pi's own
+ * structured prompt rather than something it should not touch, and they scope
+ * {@link TEXT_REPLACEMENTS} so a user's `project_context` is never rewritten.
+ */
+export const PI_OWNED_SECTIONS: readonly string[] = ["tools", "rules", "docs"];
+
+/**
+ * Marks the `tools` section's trailing filler sentence about custom tools.
+ *
+ * The paragraph containing it is dropped; the section and its tool snippets
+ * are kept, because extensions contribute those (Issue #10).
+ */
+export const PI_TOOLS_FILLER_ANCHOR = "In addition to the tools above";
+
+/**
+ * Marks a `docs` section as Pi's own documentation block.
+ *
+ * Extensions may register a section named `docs` of their own, and upstream
+ * applies custom sections after the built-ins, so the section is dropped on
+ * this anchor rather than on its name alone.
+ */
+export const PI_DOCS_SECTION_ANCHOR =
+  "Pi documentation (read only when the user asks about pi itself";
+
 export const PARAGRAPH_REMOVAL_ANCHORS: readonly string[] = [
   // Pi identity sentence
   "operating inside pi, a coding agent harness",
