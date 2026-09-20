@@ -34,3 +34,31 @@ That probe falsified the split's entire premise, and the plan (`docs/plans/0066-
 6. Scope grew by one small item during design: with the split gone, the debug log's `assistantMessagesBefore`/`After` and `toolUseNamesBefore`/`After` pairs can never differ.
    They collapse in a separate `refactor:` commit so `cliff.toml` keeps the changelog to one entry.
 7. Rejected alternatives: relocate only `text` blocks (keeps a measured-unnecessary transformation, still reorders narration against tool calls every turn), and the issue author's suggestion to skip messages containing `thinking` (same, plus it leaves `server_tool_use`-class blocks reorderable).
+
+## Stage: Implementation — TDD (2026-09-20T17:45:00Z)
+
+### Session summary
+
+Landed the removal of `splitAssistantToolUseTrailingContent` across six commits: two Tidy-First test-fixture extractions, one upstream characterization, the fix itself, a debug-log cleanup, and the doc pass.
+Test count went 88 to 90; the suite, `tsc`, lint, and the fallow dead-code gate are all green.
+The live OAuth repro passed twice on the reporter's own setup (`claude-sonnet-5` with thinking, multi-tool-call turns), with no 400 and one assistant message per turn.
+
+### Observations
+
+1. Deviation from the plan: TDD steps 2 and 3 were folded into a single `fix:` commit.
+   Keeping them separate would have put a knowingly-red commit in history, since the regression pin cannot pass until the helper is gone and the two inverted assertions break the moment it is.
+   The red state was confirmed before implementing — the failure diff showed exactly the reported corruption (`[thinking, thinking]` followed by `[tool_use, tool_use]`).
+   Noted in the commit body.
+2. The Tidy-First assessor split its verdict by file, and both halves held up.
+   It declined to prepare `src/request-shaping.ts` (a self-contained deletion needs no preparation) while recommending two fixture extractions in the test file.
+   Those paid off immediately: the two new tests are content arrays rather than 30–60 line payload copies.
+3. The debug log's collapsed fields turned out to be the cheapest verification signal in the live repro.
+   `assistantMessages` rising 1, 2, 3 across three turns is direct evidence that no turn was split — under the old code a thinking turn with trailing content would have inflated that count.
+4. The `--thinking` flag plus `-ne` is the repro combination that matters here.
+   `-ne` guarantees only the working-tree copy loads, and without `--thinking` the interleaved-thinking path is never exercised at all.
+5. Pre-completion reviewer: PASS.
+   No warnings.
+   It independently confirmed no stale references to the removed symbol or to the reworded "assistant tool-use ordering normalization" mechanism survive in `src/`, `test/`, `AGENTS.md`, `.pi/skills/`, or `README.md`, and that the historical plan docs that still mention it are covered by Non-Goals #5.
+6. Still unreproduced, and deliberately so: the reporter's exact 400.
+   No model would emit two `thinking` blocks in one assistant turn on demand during planning.
+   The fix does not rest on it — it rests on the measurement that Anthropic accepts the ordering the removed helper existed to prevent.
