@@ -346,6 +346,9 @@ The `question` parameter should be a concise prompt, almost never more than one 
 Options should be short and outcome-oriented.
 When options differ in what they produce, include the rendered before/after — not just measurements of it — in that preceding message.
 
+Do not ask on an open gap.
+When the context you are about to present contains an unexplained discrepancy ("this reproduced locally but not in CI"), close it before asking — the options themselves may be wrong.
+
 ### One decision per question
 
 Each `ask_user` question addresses one decision.
@@ -536,9 +539,14 @@ When that diff contradicts a claim in `AGENTS.md` or `docs/`, check `gh issue li
 
 ### Fresh Upstream Releases Trip The Lockfile Age Gate
 
-`pnpm add`ing a package published <24 h ago writes a `minimumReleaseAgeExclude` entry but still fails the next install's lockfile audit.
-Clear it with `pnpm clean --lockfile && pnpm install`.
-That full re-resolution also pulls every other devDep forward within its caret range — run `pnpm run lint` before assuming the bump is clean (biome 2.4→2.5 forced a config migration in v2.0.2).
+`pnpm add`ing a package published <24 h ago writes a `minimumReleaseAgeExclude` entry that does **not** work: pnpm ignores the exclude list under `pnpm install --frozen-lockfile`, which is what CI runs (pnpm/pnpm#11203, #10266, still open at 12.x).
+`pnpm clean --lockfile && pnpm install` clears the local symptom and leaves CI red.
+The repo-level fix is `minimumReleaseAge` in `pnpm-workspace.yaml`, currently 60 minutes (Refs #67).
+
+A local `--frozen-lockfile` run does not reproduce CI's check: pnpm caches a per-lockfile verdict in `~/.cache/pnpm/lockfile-verified.jsonl`, keyed by hash/path/mtime/inode, which survives deleting `node_modules` and moving the store aside.
+Delete that file first, then look for `Verifying lockfile against supply-chain policies` in the output — without that line, the check did not run.
+
+That full re-resolution also pulls every other devDep forward within its caret range — run `pnpm run lint` before assuming the bump is clean (biome 2.4→2.5 forced a config migration in v2.0.2; 2.5.7→2.5.14 forced a schema migration in #67, and vite 8.2→8.3 made `esbuild` a real dependency needing `allowBuilds`).
 
 ## Related Files
 
