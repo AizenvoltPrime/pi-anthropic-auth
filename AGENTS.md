@@ -313,6 +313,7 @@ chore: bump pi-ai peer dependency to 0.69.0
 1. Prefer ASCII unless the file already requires otherwise
 2. Keep helper modules small and purpose-specific
 3. Avoid introducing a custom full Anthropic transport unless hook limitations force it
+4. Write non-ASCII characters literally in `Edit` `newText`, never as `\uXXXX` — a bad `oldText` fails loudly, a bad `newText` silently writes the escape into the file
 
 ## `ask_user` Tool Usage
 
@@ -348,6 +349,8 @@ When options differ in what they produce, include the rendered before/after — 
 
 Do not ask on an open gap.
 When the context you are about to present contains an unexplained discrepancy ("this reproduced locally but not in CI"), close it before asking — the options themselves may be wrong.
+A cited claim is not a verified one.
+When every option shares a premise this repo inherited rather than measured, test the premise first — the missing option is usually "remove the thing the premise justifies" (Refs #66).
 
 ### One decision per question
 
