@@ -89,13 +89,33 @@ This replaces the previous, brittle approach of sniffing system-prompt markers a
 
 For OAuth requests, the injected `onPayload` runs `shapeAnthropicOAuthPayload`, which:
 
-1. normalizes assistant message ordering when Pi serializes `[tool_use..., text]` for Anthropic,
-2. sanitizes Pi's default prompt section by section (de-fingerprinting) — replacing the untagged preamble with a minimal neutral prompt, dropping the `docs` section, and stripping the custom-tool filler from inside `tools`, while preserving every other section byte-identically,
-3. applies those same section rules to the mid-conversation `role: "system"` messages Pi 0.86.0 re-sends on models that accept them (Issue #69), and
-4. prepends an `x-anthropic-billing-header` system block (without `cache_control`).
+1. sanitizes Pi's default prompt section by section (de-fingerprinting) — replacing the untagged preamble with a minimal neutral prompt, dropping the `docs` section, and stripping the custom-tool filler from inside `tools`, while preserving every other section byte-identically,
+2. applies those same section rules to the mid-conversation `role: "system"` messages Pi 0.86.0 re-sends on models that accept them (Issue #69), and
+3. prepends an `x-anthropic-billing-header` system block (without `cache_control`).
+
+Assistant messages pass through unmodified; see "Assistant block ordering is not normalized" below.
 
 The wrapper composes, rather than replaces, any caller-provided `onPayload`.
 On the main loop, Pi still passes its own `onPayload` (which fires other extensions' `before_provider_request` handlers); the wrapper runs those first and applies our shaping last, closest to the wire.
+
+## Assistant block ordering is not normalized
+
+Until Issue #66 this extension split any assistant turn that carried a non-`tool_use` block after a `tool_use` block into two consecutive assistant messages.
+That behavior was ported from OpenCode on the strength of a source comment describing Anthropic as rejecting `[tool_call, tool_call, text]`, and was never tested against Anthropic from this repository.
+
+It was measured on 2026-09-20, sending assistant histories over a Claude Max OAuth token with the Claude Code OAuth headers Pi sends (`anthropic-beta: claude-code-20250219,oauth-2025-04-20`, `user-agent: claude-cli/<version>`, `x-app: cli`) and matching `tool_result` blocks:
+
+| assistant history shape | sonnet-4-5 | haiku-4-5 | sonnet-5 | fable-5 | opus-4-8 |
+| --- | --- | --- | --- | --- | --- |
+| `[tool_use, tool_use, text]` | 200 | 200 | 200 | 200 | 200 |
+| `[text, tool_use, text, tool_use]` | 200 | 200 | 200 | 200 | 200 |
+| `[text]` + `[tool_use, tool_use]` (the old shaped output) | 200 | 200 | 200 | 200 | 200 |
+
+Anthropic accepts trailing text after `tool_use`, so the split prevented a rejection that does not occur.
+Meanwhile it actively broke interleaved thinking: Pi serializes such a turn as `[thinking, tool_use, thinking, tool_use]`, and hoisting the signed `thinking` blocks out reordered them relative to the content they were produced against, which Anthropic rejects with `thinking … blocks in the latest assistant message cannot be modified`.
+
+The helper is gone.
+Do not reintroduce ordering normalization without a fresh live rejection to point at — `test/pi-anthropic-ordering-experiment.test.ts` pins both Pi's serialization and our passthrough.
 
 ## Call paths covered
 

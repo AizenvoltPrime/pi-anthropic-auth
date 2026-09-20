@@ -75,7 +75,7 @@ It uses one Pi extension seam:
 1. `pi.registerProvider("anthropic", { api: "anthropic-messages", streamSimple })`
 
 The `streamSimple` wrapper is the single shaping point.
-It delegates to Pi's built-in Anthropic `streamSimple` transport (resolved at runtime by `src/host-transport.ts`) while injecting an `onPayload` step that runs all provider-specific logic (billing header injection, message ordering, system prompt shaping).
+It delegates to Pi's built-in Anthropic `streamSimple` transport (resolved at runtime by `src/host-transport.ts`) while injecting an `onPayload` step that runs all provider-specific logic (billing header injection, system prompt shaping).
 The delegate is resolved at runtime rather than read from the api registry: `anthropicMessagesApi()` is the non-deprecated handle pi's own `custom-provider-gitlab-duo` example uses, and reading from a registry this extension does not participate in would bind the delegate to whatever another extension registered there last.
 On pi <=0.80.7 it would also have recursed, because `registerProvider` bridged our wrapper into that slot.
 The pi-ai 0.79.x lazy-registration clobber (Issue #28) is precluded by the `>=0.86.0` peer floor.
@@ -420,7 +420,7 @@ Current suites map roughly to:
 2. `test/request-shaping.test.ts` — billing header injection, system block layering, beta-header merging, and the structural messages-payload guard.
 3. `test/system-prompt-shaping.test.ts` — section-level removal and replacement, tag balance, tool-snippet and guideline preservation, appended-content preservation, extension-registered sections, and the degraded passthrough path.
 4. `test/system-prompt-sections.test.ts` — chunk parsing and the byte-exact round-trip, including attribute-bearing tags, nested same-name tags, and unmatched open tags.
-5. `test/pi-anthropic-ordering-experiment.test.ts` — pinned experiments documenting Pi's tool-use serialization behavior.
+5. `test/pi-anthropic-ordering-experiment.test.ts` — pinned experiments documenting Pi's tool-use and interleaved-thinking serialization behavior, and our passthrough of both (Issue #66).
 6. `test/upstream-prompt-drift.test.ts` — the prompt prefix, section names, and anchors in `src/constants.ts` checked against the installed Pi's own `buildSystemPrompt` output, plus pins that the parser round-trips that prompt and that shaping takes the section path rather than the degraded passthrough.
 
 Priority areas for new tests:

@@ -106,10 +106,13 @@ Compared with `pi-anthropic-oauth`, this repo already includes some targeted Ant
 1. refresh-token fallback when refresh responses omit `refresh_token`
 2. `x-anthropic-billing-header` injection
 3. avoiding an extra `cache_control` block on the billing header system block
-4. assistant tool-use ordering normalization when text trails `tool_use` content in the same assistant turn
-5. minimal Pi prompt de-fingerprinting for OAuth payloads
+4. minimal Pi prompt de-fingerprinting for OAuth payloads
 
 Those are well aligned with this repo's stated goal: patch the smallest proven compatibility gaps without taking over the entire provider.
+
+This repo deliberately does *not* normalize assistant tool-use ordering when text trails `tool_use` content in the same assistant turn.
+It did until Issue #66, having ported the behavior from OpenCode; a live probe then measured Anthropic accepting that ordering on every model this extension serves, while the rewrite corrupted signed `thinking` blocks.
+See `docs/architecture.md`, "Assistant block ordering is not normalized".
 
 ### What might be worth borrowing later
 
