@@ -261,9 +261,6 @@ export function shapeAnthropicOAuthPayload(payload: unknown): unknown {
     : payload.system;
   const finalSystem = prependBillingHeader(shapedSystem, normalizedMessages);
 
-  const toolUseNamesBefore = getToolUseNames(messages);
-  const toolUseNamesAfter = getToolUseNames(normalizedMessages);
-
   if (shouldLogRequestDebug(messages)) {
     debugLog("before-provider-request", {
       model: payload.model,
@@ -273,13 +270,14 @@ export function shapeAnthropicOAuthPayload(payload: unknown): unknown {
       systemBlockCountAfter: Array.isArray(finalSystem)
         ? finalSystem.length
         : 0,
-      assistantMessagesBefore: countAssistantMessages(messages),
-      assistantMessagesAfter: countAssistantMessages(normalizedMessages),
+      // Only `role: "system"` messages are rewritten, so the assistant count
+      // and the tool-use names cannot differ before and after shaping; a
+      // before/after pair that cannot differ would only mislead.
+      assistantMessages: countAssistantMessages(messages),
       systemMessagesBefore: countSystemRoleMessages(messages),
       systemMessagesAfter: countSystemRoleMessages(normalizedMessages),
       toolDefinitions: getToolDefinitionNames(payload),
-      toolUseNamesBefore,
-      toolUseNamesAfter,
+      toolUseNames: getToolUseNames(messages),
     });
   }
 
