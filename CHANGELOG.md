@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.0.1](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.0.0...v3.0.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* stop reordering assistant tool-use content for anthropic oauth ([5e4b5d9](https://github.com/gotgenes/pi-anthropic-auth/commit/5e4b5d94f5cc354bf47e8a115d4fa6392d336d1e)), closes [#66](https://github.com/gotgenes/pi-anthropic-auth/issues/66)
+
+### Documentation
+
+* **retro:** add retro notes for issue #67 ([59c7cb5](https://github.com/gotgenes/pi-anthropic-auth/commit/59c7cb5f97f8d8554fc7d6d75ece4d05e5e48cb7))
+* record that anthropic accepts trailing text after tool_use ([cac6c37](https://github.com/gotgenes/pi-anthropic-auth/commit/cac6c3784b90a8169fe916c62b5135f3bc1bffdc))
+
 ## [3.0.0](https://github.com/gotgenes/pi-anthropic-auth/compare/v2.0.10...v3.0.0) (2026-09-20)
 
 
