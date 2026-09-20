@@ -1,5 +1,25 @@
 # Changelog
 
+## [3.0.0](https://github.com/gotgenes/pi-anthropic-auth/compare/v2.0.10...v3.0.0) (2026-09-20)
+
+
+### Features
+
+* **breaking:** require pi >=0.86.0 and shape the XML-sectioned system prompt ([c68eb2e](https://github.com/gotgenes/pi-anthropic-auth/commit/c68eb2ec038bded507217ce641447310f7a1f57c)), closes [#67](https://github.com/gotgenes/pi-anthropic-auth/issues/67)
+
+### Bug Fixes
+
+* **release:** exclude .pi/** from the release scope ([ac4c6f8](https://github.com/gotgenes/pi-anthropic-auth/commit/ac4c6f8d5c430036c0b841a37844e97b011bf8e6)), closes [#65](https://github.com/gotgenes/pi-anthropic-auth/issues/65)
+* shape mid-conversation system prompt updates ([2817a54](https://github.com/gotgenes/pi-anthropic-auth/commit/2817a5471110c6cf910e409b18978c8641056777)), closes [#67](https://github.com/gotgenes/pi-anthropic-auth/issues/67)
+
+### Documentation
+
+* describe the section-aware sanitizer and the 0.86.0 floor ([e0f9cd9](https://github.com/gotgenes/pi-anthropic-auth/commit/e0f9cd9203cc0f22c4e007330e7b16c8408b2fcb)), closes [#67](https://github.com/gotgenes/pi-anthropic-auth/issues/67)
+
+### Miscellaneous Chores
+
+* set minimumReleaseAge: 60 to work around broken frozen-lockfile excludes ([2142af7](https://github.com/gotgenes/pi-anthropic-auth/commit/2142af7675dc4b48a5653d9a0099e88f79365f97))
+
 ## [2.0.10](https://github.com/gotgenes/pi-anthropic-auth/compare/v2.0.9...v2.0.10) (2026-09-18)
 
 
