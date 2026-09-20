@@ -91,122 +91,146 @@ function createMockSseResponse(): Response {
   });
 }
 
-test("experiment: Pi serializer preserves trailing assistant text after tool_use blocks", async () => {
-  const model = getBuiltinModel("anthropic", TEST_MODEL);
+type AssistantMessage = Extract<
+  Context["messages"][number],
+  { role: "assistant" }
+>;
+type AssistantContent = AssistantMessage["content"];
 
+const TEST_TOOLS: Context["tools"] = [
+  {
+    name: "read",
+    description: "Read a file",
+    parameters: Type.Object({
+      filePath: Type.String(),
+    }),
+  },
+  {
+    name: "glob",
+    description: "Find files by glob",
+    parameters: Type.Object({
+      pattern: Type.String(),
+    }),
+  },
+];
+
+function createAssistantMessage(content: AssistantContent): AssistantMessage {
+  return {
+    role: "assistant",
+    content,
+    api: "anthropic-messages",
+    provider: "anthropic",
+    model: TEST_MODEL,
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "toolUse",
+    timestamp: Date.now(),
+  };
+}
+
+function createToolResult(
+  toolCallId: string,
+  toolName: string,
+  text: string,
+): Context["messages"][number] {
+  return {
+    role: "toolResult",
+    toolCallId,
+    toolName,
+    content: [{ type: "text", text }],
+    isError: false,
+    timestamp: Date.now(),
+  };
+}
+
+/**
+ * Runs Pi's own Anthropic serializer over an assistant turn and reports the
+ * block types it emits, as one array per assistant message.
+ *
+ * These tests characterize upstream rather than this extension, so they must
+ * go through `streamSimple` itself.  The transport is pinned to a mocked SSE
+ * response and the payload is captured from `onPayload`; `globalThis.fetch` is
+ * always restored, including when the stream throws.
+ */
+async function serializedAssistantBlockTypes(
+  assistantContent: AssistantContent,
+  toolResults: Context["messages"],
+): Promise<string[][]> {
   const context: Context = {
     systemPrompt: "Follow the user's instructions.",
     messages: [
-      {
-        role: "user",
-        content: "Check my home directory for PDFs.",
-        timestamp: Date.now(),
-      },
-      {
-        role: "assistant",
-        content: [
-          {
-            type: "toolCall",
-            id: "toolu_1",
-            name: "read",
-            arguments: { filePath: "/root" },
-          },
-          {
-            type: "toolCall",
-            id: "toolu_2",
-            name: "glob",
-            arguments: { pattern: "**/*.pdf" },
-          },
-          {
-            type: "text",
-            text: "I checked your home directory and looked for PDF files.",
-          },
-        ],
-        api: "anthropic-messages",
-        provider: "anthropic",
-        model: TEST_MODEL,
-        usage: {
-          input: 0,
-          output: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-          totalTokens: 0,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-        },
-        stopReason: "toolUse",
-        timestamp: Date.now(),
-      },
-      {
-        role: "toolResult",
-        toolCallId: "toolu_1",
-        toolName: "read",
-        content: [{ type: "text", text: "ok" }],
-        isError: false,
-        timestamp: Date.now(),
-      },
-      {
-        role: "toolResult",
-        toolCallId: "toolu_2",
-        toolName: "glob",
-        content: [{ type: "text", text: "No files found" }],
-        isError: false,
-        timestamp: Date.now(),
-      },
+      { role: "user", content: USER_TEXT, timestamp: Date.now() },
+      createAssistantMessage(assistantContent),
+      ...toolResults,
     ],
-    tools: [
-      {
-        name: "read",
-        description: "Read a file",
-        parameters: Type.Object({
-          filePath: Type.String(),
-        }),
-      },
-      {
-        name: "glob",
-        description: "Find files by glob",
-        parameters: Type.Object({
-          pattern: Type.String(),
-        }),
-      },
-    ],
+    tools: TEST_TOOLS,
   };
 
   let capturedPayload: unknown;
   const originalFetch = globalThis.fetch;
-
   globalThis.fetch = async () => createMockSseResponse();
 
   try {
-    const s = streamSimple(model, context, {
-      apiKey: "sk-ant-oat01-test-token",
-      onPayload(payload) {
-        capturedPayload = payload;
-        return payload;
+    const stream = streamSimple(
+      getBuiltinModel("anthropic", TEST_MODEL),
+      context,
+      {
+        apiKey: "sk-ant-oat01-test-token",
+        onPayload(payload) {
+          capturedPayload = payload;
+          return payload;
+        },
       },
-    });
+    );
 
-    await s.result();
+    await stream.result();
   } finally {
     globalThis.fetch = originalFetch;
   }
 
-  assert.ok(capturedPayload);
+  assert.ok(capturedPayload, "expected onPayload to capture a payload");
   const payload = capturedPayload as {
-    messages: Array<{
-      role: string;
-      content: Array<{ type: string; text?: string }>;
-    }>;
+    messages: Array<{ role: string; content: Array<{ type: string }> }>;
   };
 
-  const assistantMessage = payload.messages.find(
-    (message) => message.role === "assistant",
+  return payload.messages
+    .filter((message) => message.role === "assistant")
+    .map((message) => message.content.map((block) => block.type));
+}
+
+test("experiment: Pi serializer preserves trailing assistant text after tool_use blocks", async () => {
+  const blockTypes = await serializedAssistantBlockTypes(
+    [
+      {
+        type: "toolCall",
+        id: "toolu_1",
+        name: "read",
+        arguments: { filePath: "/root" },
+      },
+      {
+        type: "toolCall",
+        id: "toolu_2",
+        name: "glob",
+        arguments: { pattern: "**/*.pdf" },
+      },
+      {
+        type: "text",
+        text: "I checked your home directory and looked for PDF files.",
+      },
+    ],
+    [
+      createToolResult("toolu_1", "read", "ok"),
+      createToolResult("toolu_2", "glob", "No files found"),
+    ],
   );
 
-  assert.ok(assistantMessage);
-  assert.deepEqual(
-    assistantMessage.content.map((block) => block.type),
-    ["tool_use", "tool_use", "text"],
-  );
+  assert.deepEqual(blockTypes, [["tool_use", "tool_use", "text"]]);
 });
 
 test("experiment: current hook reshaping splits assistant tool_use blocks from trailing text", () => {
