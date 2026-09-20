@@ -233,6 +233,43 @@ test("experiment: Pi serializer preserves trailing assistant text after tool_use
   assert.deepEqual(blockTypes, [["tool_use", "tool_use", "text"]]);
 });
 
+test("experiment: Pi serializer preserves interleaved thinking between tool_use blocks", async () => {
+  const blockTypes = await serializedAssistantBlockTypes(
+    [
+      {
+        type: "thinking",
+        thinking: "First I should look at the home directory.",
+        thinkingSignature: "sig-1",
+      },
+      {
+        type: "toolCall",
+        id: "toolu_1",
+        name: "read",
+        arguments: { filePath: "/root" },
+      },
+      {
+        type: "thinking",
+        thinking: "Now I should search for the PDFs themselves.",
+        thinkingSignature: "sig-2",
+      },
+      {
+        type: "toolCall",
+        id: "toolu_2",
+        name: "glob",
+        arguments: { pattern: "**/*.pdf" },
+      },
+    ],
+    [
+      createToolResult("toolu_1", "read", "ok"),
+      createToolResult("toolu_2", "glob", "No files found"),
+    ],
+  );
+
+  assert.deepEqual(blockTypes, [
+    ["thinking", "tool_use", "thinking", "tool_use"],
+  ]);
+});
+
 test("experiment: current hook reshaping splits assistant tool_use blocks from trailing text", () => {
   const blockTypes = shapedAssistantBlockTypes(
     [
