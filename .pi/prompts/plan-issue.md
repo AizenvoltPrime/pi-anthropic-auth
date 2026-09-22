@@ -1,6 +1,6 @@
 ---
 description: Read a GitHub issue, gather context, and write a numbered plan to docs/plans/
-model: anthropic/claude-opus-5
+model: anthropic/claude-opus-5-5
 ---
 
 # Plan a GitHub issue

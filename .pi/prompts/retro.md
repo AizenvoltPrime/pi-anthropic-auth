@@ -1,6 +1,6 @@
 ---
 description: Review this session for workflow improvements and persist retro notes to docs/retro/
-model: anthropic/claude-opus-5
+model: anthropic/claude-opus-5-5
 ---
 
 # Review session and persist retro notes

@@ -1,6 +1,6 @@
 ---
 description: Assess what a new Pi release breaks in this package, with an empirical scratch-tree verification
-model: anthropic/claude-opus-5
+model: anthropic/claude-opus-5-5
 ---
 
 # Assess a new Pi release
