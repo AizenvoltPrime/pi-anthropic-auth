@@ -87,16 +87,17 @@ test("prepends the billing header block without adding cache control on OAuth pa
   assert.equal(shaped["anthropic-beta"], "existing-beta");
 });
 
-test("pins a Claude Code version at or above the Fable 5.1 floor", () => {
-  // Anthropic rejects OAuth requests for claude-fable-5-1 when the reported
-  // Claude Code version is below 2.1.251 (error_code: claude_code_version_too_old).
+test("pins a Claude Code version at or above the Opus 5.5 floor", () => {
+  // Anthropic rejects OAuth requests for claude-opus-5-5 when the reported
+  // Claude Code version is below 2.1.280 (error_code: claude_code_version_too_old).
+  // The previous floor was 2.1.251, for claude-fable-5-1.
   const [major, minor, patch] = CLAUDE_CODE_VERSION.split(".").map(Number);
 
   assert.equal(major, 2);
   assert.equal(minor, 1);
   assert.ok(
-    patch >= 251,
-    `CLAUDE_CODE_VERSION ${CLAUDE_CODE_VERSION} is below the 2.1.251 floor`,
+    patch >= 280,
+    `CLAUDE_CODE_VERSION ${CLAUDE_CODE_VERSION} is below the 2.1.280 floor`,
   );
 });
 

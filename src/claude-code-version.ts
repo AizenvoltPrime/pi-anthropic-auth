@@ -13,6 +13,9 @@
 // the `stable` dist-tag lags `latest` (2.1.267 vs 2.1.280 on 2026-09-22), so
 // a local install is frequently *below* the floor Anthropic requires for new
 // models.
+//
+// Known floors: claude-fable-5-1 requires >= 2.1.251; claude-opus-5-5
+// requires >= 2.1.280.
 // ---------------------------------------------------------------------------
 
 /**
@@ -23,7 +26,7 @@
  * too far from what Anthropic expects, OAuth requests may be rejected or
  * counted incorrectly.
  */
-export const CLAUDE_CODE_VERSION = "2.1.260";
+export const CLAUDE_CODE_VERSION = "2.1.280";
 
 /**
  * Environment variable that overrides {@link CLAUDE_CODE_VERSION}.
