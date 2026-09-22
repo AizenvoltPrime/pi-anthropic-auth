@@ -103,26 +103,27 @@ To use the API key instead, run `/logout anthropic` inside Pi to remove the stor
 Anthropic gates newly released models on a minimum Claude Code version:
 
 ```text
-400 invalid_request_error: Claude Code 2.1.206 does not support this model;
-version 2.1.251 or newer is required.
+400 invalid_request_error: Claude Code 2.1.260 does not support this model;
+version 2.1.280 or newer is required.
 details.error_code: claude_code_version_too_old
 ```
 
-This package reports a bundled Claude Code version in the OAuth billing header.
-When Anthropic raises the floor faster than a release ships, override the pin:
+This package reports a bundled Claude Code version in the OAuth billing header, and Anthropic gates on that value.
+The bundled version is a **floor**, not a fixed value: when the Pi you are running reports a newer Claude Code version in its own `user-agent`, this extension adopts it automatically for the billing header.
+So upgrading Pi is usually enough to reach a newly gated model.
+
+When Anthropic raises the floor faster than either Pi or this package ships, override the pin:
 
 ```bash
-export PI_ANTHROPIC_AUTH_CLAUDE_CODE_VERSION=2.1.260
+export PI_ANTHROPIC_AUTH_CLAUDE_CODE_VERSION=2.1.280
 ```
 
 The value must be a bare `X.Y.Z` version; anything else fails fast with an explicit error.
-Check the current release with `npm view @anthropic-ai/claude-code version`.
+An override is absolute — taken verbatim, and never raised from Pi's version — so a stale override can itself cause this error.
+Check the current release with `npm view @anthropic-ai/claude-code dist-tags`.
 
 Do not derive the value from a local `claude --version`.
 Claude Code's `stable` release channel lags `latest`, so an installed copy is often *below* the floor a new model requires.
-
-If the version in the error message is **not** the one this package reports, the request is being rejected on Pi's own `user-agent: claude-cli/<version>`, which this extension does not control.
-That pin lives in Pi's `pi-ai` package and needs a Pi upgrade.
 
 ### `/compact` fails with a Terms of Service message
 

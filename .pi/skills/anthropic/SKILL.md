@@ -37,6 +37,9 @@ compatibility: Intended for the pi-anthropic-auth repository and Pi Anthropic OA
   The split that used to rewrite those turns corrupted signed `thinking` blocks and was removed (Issue #66).
 - Pi's default system prompt can act as an Anthropic fingerprint and trigger disguised rejection errors.
 - Shaping runs in a thin `streamSimple` transport wrapper (delegating to Pi's built-in Anthropic transport, resolved from the installed pi-ai layout), gated on the `sk-ant-oat` token.
+- The billing header's `cc_version` is a **floor**, not a fixed value: the wrapper injects an `options.fetch` that reads pi's own `user-agent: claude-cli/<version>` off the built request and rebuilds the header at pi's version when pi reports a higher one (Issue #74).
+  An explicit `PI_ANTHROPIC_AUTH_CLAUDE_CODE_VERSION` override is absolute and is never raised.
+  Measured live on pi 0.87.1 against `claude-opus-5-5`: with the pin forced to 2.1.260 the request succeeds; with the same value set through the env override it is rejected as `claude_code_version_too_old`.
 - The wrapper covers the main loop and compaction — everything that dispatches through `modelRuntime`.
 - On pi >=0.80.8, `agentLoop` background agents and extensions calling pi-ai's `compat.streamSimple` directly are confirmed uncovered, and cannot be covered from this extension (Issue #46); see `docs/architecture.md` for why, and for the `agent.streamFunction` workaround.
 
@@ -111,6 +114,7 @@ A black-box probe gets three things wrong by default:
 
 Vary one factor at a time and record refusal rates, not verdicts.
 Expect model-specific answers: `claude-fable-5-1` refuses payloads `claude-fable-5` accepts, and 5.1 is unreachable on the unwrapped transport because pi's `claude-cli` user-agent trips the version floor (Issue #60).
+When a probe needs pi's own Claude Code version, drive the built-in transport with a throwing capturing `fetch` — offline, no network; `test/claude-code-version-drift.test.ts` is the worked example.
 
 Issue #65 is the worked example of all three failures at once — see `docs/retro/0065-*.md`.
 
@@ -125,6 +129,10 @@ All request shaping runs in the transport wrapper (`src/oauth-transport.ts`), wh
 - cache-control adjustments
 - system prompt de-fingerprinting (section-aware: replaces the untagged preamble, drops the `docs` section, strips the `tools` filler; preserves every other section byte-identically)
 - the same section rules applied to mid-conversation `role: "system"` updates (Issue #69)
+
+One step does not fit in `onPayload` and runs in an injected `options.fetch` instead (`src/billing-version-sync.ts`): raising `cc_version` to pi's reported `claude-cli` version.
+Pi's version is added by pi-ai's own `createClient`, downstream of every other seam we can reach, so the built request's headers are the only place to read it.
+The body splice is an exact-string replacement of the header we emitted moments earlier — never a JSON round-trip, which would put a re-serialization downstream of the byte-exact section preservation.
 
 Gate on the `sk-ant-oat` access-token prefix (`options.apiKey`), the same signal Pi uses internally.
 This covers the main loop and compaction; `agentLoop` background agents are confirmed uncovered on pi >=0.80.8 and are out of reach from here (Issue #46).

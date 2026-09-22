@@ -95,7 +95,13 @@ For OAuth requests, the injected `onPayload` runs `shapeAnthropicOAuthPayload`, 
 
 Assistant messages pass through unmodified; see "Assistant block ordering is not normalized" below.
 
-The wrapper composes, rather than replaces, any caller-provided `onPayload`.
+For OAuth requests the wrapper also injects an `options.fetch` wrapper.
+One fact it needs is not available at `onPayload` time: pi-ai's `createClient` adds `user-agent: claude-cli/<version>` to the built request, downstream of every other seam this extension can reach, and Anthropic gates new models on the `cc_version` we send rather than on that header.
+The bundled pin is therefore a floor — when pi reports a higher Claude Code version, the fetch wrapper rebuilds the billing header at pi's version and splices it into the outgoing body; otherwise the body is sent exactly as `onPayload` produced it.
+The splice is an exact-string replacement of the header this extension emitted moments earlier, never a JSON round-trip, so the byte-exact section preservation above survives it.
+An explicit `PI_ANTHROPIC_AUTH_CLAUDE_CODE_VERSION` override is absolute and is never raised (Issue #74).
+
+The wrapper composes, rather than replaces, any caller-provided `onPayload` and any caller-provided `fetch`.
 On the main loop, Pi still passes its own `onPayload` (which fires other extensions' `before_provider_request` handlers); the wrapper runs those first and applies our shaping last, closest to the wire.
 
 ## Assistant block ordering is not normalized
@@ -206,6 +212,10 @@ Upstream draws the same distinction: `agent-session.ts` branches on `this.agent.
   See `docs/builtin-transport-seam-gap.md` for why no resolution handle is both loader-safe and durable past pi-ai's `compat` removal, and the committed near-term direction.
 - `src/oauth-transport.ts` — the token-gated `streamSimple` wrapper.
 - `src/request-shaping.ts` — the shaping pipeline applied via `onPayload`.
+- `src/anthropic-message.ts` — loose structural types for the `messages[]` entries that shaping and billing-header construction both read.
+- `src/billing-header.ts` — the `x-anthropic-billing-header` recipe, with the Claude Code version as an explicit parameter so the same header can be rebuilt at a different version.
+- `src/claude-code-version.ts` — the Claude Code version floor, its environment override, `claude-cli` user-agent parsing, and numeric version comparison (Issue #74).
+- `src/billing-version-sync.ts` — the per-request `fetch` wrapper that raises `cc_version` to pi's reported version at the wire (Issue #74).
 - `src/system-prompt-sections.ts` — parser for Pi's XML-sectioned system prompt; splits it into ordered chunks and renders them back byte-exactly, so an unrecognized section is copied rather than re-serialized (Issue #67).
 - `src/system-prompt-shaping.ts` — section-aware sanitizer that replaces Pi's preamble, drops the `docs` section, strips the `tools` filler, and preserves everything else.
 - `src/diagnostics.ts` — `ExtensionDiagnostics` value object, `formatDiagnosticsReport`, and `createStatusCommandHandler`; surfaced by the `/anthropic-auth:status` command registered in `src/index.ts`.

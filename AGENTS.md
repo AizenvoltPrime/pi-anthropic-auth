@@ -37,10 +37,11 @@ The current implementation does the following:
 3. Prepends an Anthropic billing/content-consistency header block to `system[]`
 4. Sanitizes Pi's default prompt section by section during the same shaping pass — replacing the untagged preamble with a minimal neutral prompt, dropping the `docs` section, and stripping the custom-tool filler from inside `tools` — while preserving every other section byte-identically (tool snippets, guidelines, and appended extension content)
 5. Applies the same section rules to the mid-conversation system messages Pi 0.86.0 re-sends on models that accept them (Issue #69)
-6. Gates all shaping on the `sk-ant-oat` OAuth access-token prefix, so API-key and non-Anthropic requests pass through untouched
+6. Raises the billing header's `cc_version` to Pi's own `claude-cli` version at the wire when Pi reports a higher one, making the bundled pin a floor rather than the answer (Issue #74)
+7. Gates all shaping on the `sk-ant-oat` OAuth access-token prefix, so API-key and non-Anthropic requests pass through untouched
 
 It wraps, but does not reimplement, Pi's built-in Anthropic streaming transport.
-The wrapper delegates to Pi's own built-in Anthropic `streamSimple` transport and only injects an `onPayload` shaping step.
+The wrapper delegates to Pi's own built-in Anthropic `streamSimple` transport and injects two steps: an `onPayload` shaping step, and an `options.fetch` wrapper for the version reconciliation, which needs the built request's headers.
 
 ## Principles
 
@@ -76,6 +77,7 @@ It uses one Pi extension seam:
 
 The `streamSimple` wrapper is the single shaping point.
 It delegates to Pi's built-in Anthropic `streamSimple` transport (resolved at runtime by `src/host-transport.ts`) while injecting an `onPayload` step that runs all provider-specific logic (billing header injection, system prompt shaping).
+It also injects an `options.fetch` wrapper for OAuth requests, because one fact — the Claude Code version pi reports in its `user-agent` — is only observable on the built request, downstream of `onPayload` (Issue #74).
 The delegate is resolved at runtime rather than read from the api registry: `anthropicMessagesApi()` is the non-deprecated handle pi's own `custom-provider-gitlab-duo` example uses, and reading from a registry this extension does not participate in would bind the delegate to whatever another extension registered there last.
 On pi <=0.80.7 it would also have recursed, because `registerProvider` bridged our wrapper into that slot.
 The pi-ai 0.79.x lazy-registration clobber (Issue #28) is precluded by the `>=0.86.0` peer floor.
@@ -97,10 +99,14 @@ Current source layout:
 2. `src/host-transport.ts`: runtime resolution of Pi's built-in Anthropic transport via an `@earendil-works/pi-ai/compat` import through Pi's loader indirection, reading the `anthropicMessagesApi()` factory off the compat namespace (Issue #28, Issue #31, Issue #35, Issue #54)
 3. `src/oauth-transport.ts`: token-gated `streamSimple` wrapper that applies shaping on every Anthropic call path reaching `provider-composer` (Issue #46)
 4. `src/request-shaping.ts`: Anthropic OAuth request shaping helpers
-5. `src/system-prompt-sections.ts`: parser for Pi's XML-sectioned system prompt, splitting it into ordered chunks and rendering them back byte-exactly (Issue #67)
-6. `src/system-prompt-shaping.ts`: section-aware Anthropic OAuth prompt sanitizer that replaces Pi's preamble, drops the `docs` section, strips the `tools` filler, and preserves everything else
-7. `src/debug.ts`: opt-in structured debug logging for live OAuth repros
-8. `src/diagnostics.ts`: `ExtensionDiagnostics` value object, formatter, and handler factory for the `/anthropic-auth:status` command
+5. `src/anthropic-message.ts`: loose structural types for the `messages[]` entries shaping and billing-header construction both read
+6. `src/billing-header.ts`: the `x-anthropic-billing-header` recipe — salt, sampled positions, entrypoint, and `buildBillingHeaderValue(messageText, version)`
+7. `src/claude-code-version.ts`: the Claude Code version floor, its env override, `claude-cli` user-agent parsing, and numeric version comparison (Issue #74)
+8. `src/billing-version-sync.ts`: per-request `fetch` wrapper that raises `cc_version` to Pi's reported `claude-cli` version at the wire (Issue #74)
+9. `src/system-prompt-sections.ts`: parser for Pi's XML-sectioned system prompt, splitting it into ordered chunks and rendering them back byte-exactly (Issue #67)
+10. `src/system-prompt-shaping.ts`: section-aware Anthropic OAuth prompt sanitizer that replaces Pi's preamble, drops the `docs` section, strips the `tools` filler, and preserves everything else
+11. `src/debug.ts`: opt-in structured debug logging for live OAuth repros
+12. `src/diagnostics.ts`: `ExtensionDiagnostics` value object, formatter, and handler factory for the `/anthropic-auth:status` command
 
 ### Project Skills
 
@@ -410,8 +416,8 @@ Use `tool-use` by default when debugging real CLI flows so logs stay quiet until
 1. Test files are named `*.test.ts` and are collocated under `test/` (not next to source).
 2. Tests use `node:assert/strict` for assertions and `vitest`'s `test` (and `onTestFinished` for per-test cleanup) for the runner. Existing files are the reference style — keep new tests consistent.
 3. Keep tests focused on compatibility helpers rather than broad end-to-end behavior. Mock `globalThis.fetch` for OAuth flows; build payload fixtures inline rather than depending on Pi internals.
-   `test/upstream-prompt-drift.test.ts` is the one sanctioned exception: it imports Pi's own `buildSystemPrompt` because depending on the internal *is* what it verifies (Issue #52).
-   Do not treat it as precedent for other suites.
+   Two suites are sanctioned exceptions, because depending on the internal *is* what they verify: `test/upstream-prompt-drift.test.ts` imports Pi's own `buildSystemPrompt` (Issue #52), and `test/claude-code-version-drift.test.ts` drives Pi's own Anthropic transport to read its `claude-cli` user-agent (Issue #74).
+   Do not treat either as precedent for other suites.
 4. When asserting on shaped system prompts, prefer regex matches that pin specific markers (`/^You are an expert coding assistant\./`, `/<project_context>/`) over deep-equal on full prompt strings, so tests survive harmless reformatting upstream.
    Pin markers Pi actually emits: Pi replaced the `# Project Context` heading with `<project_context>` tags in v0.75.0, and an assertion on the old heading can only pass against a fixture that invented it (Issue #47).
 
@@ -419,12 +425,15 @@ Use `tool-use` by default when debugging real CLI flows so logs stay quiet until
 
 Current suites map roughly to:
 
-1. `test/oauth-transport.test.ts` — `sk-ant-oat` token gating, `onPayload` composition, and delegation to the built-in transport.
+1. `test/oauth-transport.test.ts` — `sk-ant-oat` token gating, `onPayload` composition, `fetch` injection and composition, and delegation to the built-in transport.
 2. `test/request-shaping.test.ts` — billing header injection, system block layering, beta-header merging, and the structural messages-payload guard.
-3. `test/system-prompt-shaping.test.ts` — section-level removal and replacement, tag balance, tool-snippet and guideline preservation, appended-content preservation, extension-registered sections, and the degraded passthrough path.
-4. `test/system-prompt-sections.test.ts` — chunk parsing and the byte-exact round-trip, including attribute-bearing tags, nested same-name tags, and unmatched open tags.
-5. `test/pi-anthropic-ordering-experiment.test.ts` — pinned experiments documenting Pi's tool-use and interleaved-thinking serialization behavior, and our passthrough of both (Issue #66).
-6. `test/upstream-prompt-drift.test.ts` — the prompt prefix, section names, and anchors in `src/constants.ts` checked against the installed Pi's own `buildSystemPrompt` output, plus pins that the parser round-trips that prompt and that shaping takes the section path rather than the degraded passthrough.
+3. `test/claude-code-version.test.ts` — `claude-cli` user-agent parsing and numeric `X.Y.Z` comparison, including the unparseable-candidate fallbacks.
+4. `test/billing-version-sync.test.ts` — the wire-level `cc_version` upgrade: pass-through when Pi is absent, lower, or equal; rewrite when Pi is higher; the env override's absolute precedence; and that nothing outside the billing block changes.
+5. `test/claude-code-version-drift.test.ts` — the offline drift alarm against the installed pi-ai: `options.fetch` is forwarded, the `claude-cli` user-agent parses, and our pin is not below Pi's (Issue #74).
+6. `test/system-prompt-shaping.test.ts` — section-level removal and replacement, tag balance, tool-snippet and guideline preservation, appended-content preservation, extension-registered sections, and the degraded passthrough path.
+7. `test/system-prompt-sections.test.ts` — chunk parsing and the byte-exact round-trip, including attribute-bearing tags, nested same-name tags, and unmatched open tags.
+8. `test/pi-anthropic-ordering-experiment.test.ts` — pinned experiments documenting Pi's tool-use and interleaved-thinking serialization behavior, and our passthrough of both (Issue #66).
+9. `test/upstream-prompt-drift.test.ts` — the prompt prefix, section names, and anchors in `src/constants.ts` checked against the installed Pi's own `buildSystemPrompt` output, plus pins that the parser round-trips that prompt and that shaping takes the section path rather than the degraded passthrough.
 
 Priority areas for new tests:
 
@@ -463,19 +472,29 @@ Any shaping that must apply to every OAuth request `provider-composer` sees belo
 
 Anthropic rejects OAuth requests for a newly released model when the reported Claude Code version is below a per-model floor, with `error_code: claude_code_version_too_old`.
 Claude Fable 5.1 (`claude-fable-5-1`) requires >= 2.1.251; the 2.1.206 pin blocked it entirely (Issue #60).
+Claude Opus 5.5 (`claude-opus-5-5`, added to pi-ai's catalog in 0.87.1) requires >= 2.1.280; the 2.1.260 pin blocked it entirely (Issue #74).
 
-Two different version signals reach Anthropic, and only one is ours:
+Two different version signals reach Anthropic:
 
-1. `user-agent: claude-cli/<version>`, hardcoded as `claudeCodeVersion` in pi-ai's `anthropic-messages.ts` (2.1.75 through pi 0.84.4; bumped to 2.1.251 on pi `main` in `96317e50b`, still unreleased)
-2. `cc_version=<version>` in the billing header this extension injects, from `CLAUDE_CODE_VERSION` in `src/constants.ts`
+1. `user-agent: claude-cli/<version>`, hardcoded as the module-private `claudeCodeVersion` in pi-ai's `anthropic-messages.ts` (2.1.75 through pi 0.84.4; 2.1.251 in 0.86.0 and 0.87.0; 2.1.280 in 0.87.1, which tracks Claude Code releases closely)
+2. `cc_version=<version>` in the billing header this extension injects, from `CLAUDE_CODE_VERSION` in `src/claude-code-version.ts`
 
-Verified live against `claude-fable-5-1` on pi 0.84.4: bumping only our `cc_version` fixes the rejection even though pi still sends `claude-cli/2.1.75`.
-So Anthropic gates on the billing header when it is present, and this repo can fix a version floor without waiting on a pi release.
-Read the version named in the error message to tell the two apart — if it is not our pin, the request is being rejected on pi's user-agent and needs a pi upgrade instead.
+Anthropic gates on the billing header when it is present.
+Verified live against `claude-fable-5-1` on pi 0.84.4: bumping only our `cc_version` fixed the rejection even though pi still sent `claude-cli/2.1.75`.
+So this repo can fix a version floor without waiting on a pi release.
+
+Since Issue #74 the two signals are reconciled rather than independent.
+`CLAUDE_CODE_VERSION` is a **floor**: `src/billing-version-sync.ts` injects an `options.fetch` wrapper that reads pi's `claude-cli` user-agent off the built request and, when pi reports a higher version, rebuilds the billing header at pi's version on the way out.
+A lower or unparseable pi version never lowers the pin, and an explicit `PI_ANTHROPIC_AUTH_CLAUDE_CODE_VERSION` override is absolute — it is used verbatim and is never raised.
+Measured live on pi 0.87.1 against `claude-opus-5-5`: with the pin forced to 2.1.260 the request succeeds, and with the same 2.1.260 supplied through the env override it is rejected.
+So a version named in an error message that is *not* our pin now means either pi's own user-agent floor (needing a pi upgrade) or an env override the user set.
 
 Do not source the value from a local `claude --version`.
-Claude Code's `stable` dist-tag lags `latest` (2.1.236 vs 2.1.260 on 2026-09-03), so an installed copy is routinely *below* the floor a new model requires; `npm view @anthropic-ai/claude-code version` is the check that matters.
+Claude Code's `stable` dist-tag lags `latest` (2.1.267 vs 2.1.280 on 2026-09-22), so an installed copy is routinely *below* the floor a new model requires; `npm view @anthropic-ai/claude-code dist-tags` is the check that matters.
 Also confirm the value rather than trusting a number quoted in an issue or PR: Issue #60 and PRs #61/#62 each cited a different "current" version, and all three were stale by the time they were read.
+
+`test/claude-code-version-drift.test.ts` is the offline alarm: it drives the installed pi-ai's own transport with a throwing capturing `fetch` and fails when our pin drops below pi's, when pi's user-agent stops parsing, or when pi stops forwarding `options.fetch` (which would silently disable the wire-level upgrade).
+Raising the pin still matters when that fires: users on an older pi have no higher version to be raised to.
 
 Users can override the pin at runtime with `PI_ANTHROPIC_AUTH_CLAUDE_CODE_VERSION` (validated `X.Y.Z`, throws otherwise).
 
