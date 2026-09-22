@@ -34,6 +34,30 @@ Wrote `docs/plans/0074-claude-code-version-reconciliation.md` (7 steps: two extr
 - Conflict watch: PR [#71] (issue [#70]) also edits `src/constants.ts`.
   Steps 1 and 2 move symbols out of it.
 
+## Stage: Implementation — TDD (2026-09-22T23:05:00Z)
+
+### Session summary
+
+Landed all seven plan steps plus three Tidy-First preparatory commits, in ten commits.
+The bundled `CLAUDE_CODE_VERSION` is now a floor that Pi's own `claude-cli` user-agent can raise at the wire, the pin moved to 2.1.280 to unblock `claude-opus-5-5`, and an offline drift test pins both our floor and the upstream mechanisms the design depends on.
+Tests went from 90 to 119 (+29); `check`, `lint`, and `fallow dead-code` are clean.
+
+### Observations
+
+- The Tidy-First assessor caught a real trap the plan had deferred: the plan said "decide during implementation" where `MessageParam` should live, and both obvious answers were wrong (`billing-header.ts` owning a general message type, or an import cycle back to `request-shaping.ts`).
+  It went to a new `src/anthropic-message.ts` instead.
+  Two other preparatory commits landed on its recommendation: hoisting the OAuth gate in `oauth-transport.ts` so the `fetch` seam could reuse it, and lifting `buildExpectedBillingHeader`/`withVersionOverride` into `test/billing-header-fixtures.ts` so the new suite could share the independent oracle without importing production code.
+- The live verification was the most valuable step and was cheap.
+  Forcing the pin down to 2.1.260 in the working tree and running `claude-opus-5-5` on pi 0.87.1 returned `OK` — the same value that had returned a hard 400 minutes earlier — which proves the wire-level upgrade fires under Pi's real loader, not just under vitest.
+  Setting the *same* 2.1.260 through `PI_ANTHROPIC_AUTH_CLAUDE_CODE_VERSION` then returned the 400, which is a negative control and a live proof that the override is absolute.
+  A unit test could not have produced either result.
+- All three drift tests passed on first write, so each was mutation-checked before being accepted as a pin: flipping `fetchWasCalled` to `false`, narrowing the user-agent regex to an impossible shape, and lowering the pin to `1.0.0` each produced a distinct failure.
+- One API was added beyond the plan: `hasClaudeCodeVersionOverride`.
+  Without it the upgrade path would read `resolveClaudeCodeVersion()` (which already returns the override) and could raise a user's explicit pin, silently breaking the documented "pin exactly" contract.
+- `eslint`'s `no-unnecessary-condition` surfaced something subtle and useful: because `isAnthropicOAuthToken` is a type predicate over `options?.apiKey`, TypeScript narrows `options` itself to non-nullish inside the true branch, so `options?.fetch` there was a dead optional chain.
+- Pre-completion reviewer: PASS.
+  Two informational WARNs, neither addressed: `isRecord` is duplicated between `src/request-shaping.ts` and `src/billing-version-sync.ts` (three lines, two callers — shared extraction judged premature), and `fallow dupes` flags the 18-line clone between `src/billing-header.ts` and `test/billing-header-fixtures.ts`, which is the intentional independent-oracle pattern and will keep appearing.
+
 [#67]: https://github.com/gotgenes/pi-anthropic-auth/issues/67
 [#70]: https://github.com/gotgenes/pi-anthropic-auth/issues/70
 [#71]: https://github.com/gotgenes/pi-anthropic-auth/issues/71
