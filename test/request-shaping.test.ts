@@ -1,56 +1,18 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { onTestFinished, test } from "vitest";
+import { test } from "vitest";
 
 import {
   CLAUDE_CODE_VERSION,
   CLAUDE_CODE_VERSION_ENV,
   resolveClaudeCodeVersion,
 } from "#src/claude-code-version";
-import { BILLING_HEADER_POSITIONS, BILLING_HEADER_SALT } from "#src/constants";
 import { shapeAnthropicOAuthPayload } from "#src/request-shaping";
+import {
+  buildExpectedBillingHeader,
+  withVersionOverride,
+} from "#test/billing-header-fixtures";
 
 const TEST_MODEL = "claude-haiku-4-5";
-
-/**
- * Sets the Claude Code version override for one test and restores the previous
- * value (including "was unset") when the test finishes.
- */
-function withVersionOverride(value: string): void {
-  const previous = process.env[CLAUDE_CODE_VERSION_ENV];
-  process.env[CLAUDE_CODE_VERSION_ENV] = value;
-  onTestFinished(() => {
-    if (previous === undefined) {
-      delete process.env.PI_ANTHROPIC_AUTH_CLAUDE_CODE_VERSION;
-      return;
-    }
-    process.env[CLAUDE_CODE_VERSION_ENV] = previous;
-  });
-}
-
-function buildExpectedBillingHeader(
-  messageText: string,
-  claudeCodeVersion: string = CLAUDE_CODE_VERSION,
-): string {
-  const cch = createHash("sha256")
-    .update(messageText)
-    .digest("hex")
-    .slice(0, 5);
-  const sampledCharacters = BILLING_HEADER_POSITIONS.map(
-    (index) => messageText[index] || "0",
-  ).join("");
-  const suffix = createHash("sha256")
-    .update(`${BILLING_HEADER_SALT}${sampledCharacters}${claudeCodeVersion}`)
-    .digest("hex")
-    .slice(0, 3);
-
-  return [
-    "x-anthropic-billing-header:",
-    `cc_version=${claudeCodeVersion}.${suffix};`,
-    "cc_entrypoint=sdk-cli;",
-    `cch=${cch};`,
-  ].join(" ");
-}
 
 function createOAuthPayload(overrides: Record<string, unknown> = {}) {
   return {
