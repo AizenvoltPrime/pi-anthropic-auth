@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.1.0](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.0.1...v3.1.0) (2026-09-22)
+
+
+### Features
+
+* raise cc_version to Pi's claude-cli version at the wire ([6657f3a](https://github.com/gotgenes/pi-anthropic-auth/commit/6657f3aff2128c116d5ebb3d8b2a604f7f6d90fc))
+
+### Bug Fixes
+
+* bump the Claude Code version pin to 2.1.280 ([8dd57a1](https://github.com/gotgenes/pi-anthropic-auth/commit/8dd57a14e2ed5b69c2606cd11cb46c0b90b164fe))
+
+### Documentation
+
+* **retro:** add retro notes for issue #66 ([d83b174](https://github.com/gotgenes/pi-anthropic-auth/commit/d83b174f52a00fd7a0d89fbcd4abb4253f3c4e44))
+* record the Claude Code version reconciliation ([02bc0ae](https://github.com/gotgenes/pi-anthropic-auth/commit/02bc0aec95f7835549aeef928edd0c1238046cfc))
+
 ## [3.0.1](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.0.0...v3.0.1) (2026-09-20)
 
 
