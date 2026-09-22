@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import type { MessageBlock, MessageParam } from "./anthropic-message";
+import { resolveClaudeCodeVersion } from "./claude-code-version";
 import {
   BILLING_HEADER_POSITIONS,
   BILLING_HEADER_SALT,
   CLAUDE_CODE_ENTRYPOINT,
-  resolveClaudeCodeVersion,
 } from "./constants";
 import { debugLog, isToolUseOnlyDebugEnabled } from "./debug";
 import {

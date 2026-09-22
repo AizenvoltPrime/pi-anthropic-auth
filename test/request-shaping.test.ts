@@ -3,12 +3,11 @@ import { createHash } from "node:crypto";
 import { onTestFinished, test } from "vitest";
 
 import {
-  BILLING_HEADER_POSITIONS,
-  BILLING_HEADER_SALT,
   CLAUDE_CODE_VERSION,
   CLAUDE_CODE_VERSION_ENV,
   resolveClaudeCodeVersion,
-} from "#src/constants";
+} from "#src/claude-code-version";
+import { BILLING_HEADER_POSITIONS, BILLING_HEADER_SALT } from "#src/constants";
 import { shapeAnthropicOAuthPayload } from "#src/request-shaping";
 
 const TEST_MODEL = "claude-haiku-4-5";
