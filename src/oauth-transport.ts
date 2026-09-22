@@ -93,17 +93,28 @@ export function createAnthropicOAuthStreamSimple(
   delegate: AnthropicStreamSimpleDelegate,
 ): AnthropicStreamSimple {
   return (model, context, options) => {
+    // Resolved once per request rather than per payload: the token decides
+    // both whether shaping runs and — as of the billing-version sync — which
+    // transport-level collaborators are attached at all, and those decisions
+    // must agree.
+    const isOAuthRequest = isAnthropicOAuthToken(options?.apiKey);
     const callerOnPayload = options?.onPayload;
+
+    const composeCallerOnPayload = async (
+      payload: unknown,
+      payloadModel: Model<Api>,
+    ): Promise<unknown> =>
+      callerOnPayload
+        ? ((await callerOnPayload(payload, payloadModel)) ?? payload)
+        : payload;
 
     const onPayload: SimpleStreamOptions["onPayload"] = async (
       payload,
       payloadModel,
     ) => {
-      const upstream = callerOnPayload
-        ? ((await callerOnPayload(payload, payloadModel)) ?? payload)
-        : payload;
+      const upstream = await composeCallerOnPayload(payload, payloadModel);
 
-      if (!isAnthropicOAuthToken(options?.apiKey)) {
+      if (!isOAuthRequest) {
         return upstream;
       }
 
