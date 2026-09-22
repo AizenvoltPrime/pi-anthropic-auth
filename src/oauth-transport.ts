@@ -5,6 +5,7 @@ import type {
   SimpleStreamOptions,
   TranscriptContext,
 } from "@earendil-works/pi-ai";
+import { createBillingVersionSync } from "./billing-version-sync";
 import type { AnthropicStreamSimpleDelegate } from "./host-transport";
 import { shapeAnthropicOAuthPayload } from "./request-shaping";
 
@@ -100,6 +101,15 @@ export function createAnthropicOAuthStreamSimple(
     const isOAuthRequest = isAnthropicOAuthToken(options?.apiKey);
     const callerOnPayload = options?.onPayload;
 
+    // Pi's own Claude Code version is only observable at the fetch boundary:
+    // pi-ai's `createClient` adds `user-agent: claude-cli/<version>`
+    // downstream of every other seam we can reach.  The sync object is
+    // constructed only for OAuth requests, so an API-key request keeps the
+    // caller's `fetch` (or none) untouched.
+    const versionSync = isOAuthRequest
+      ? createBillingVersionSync(options.fetch)
+      : undefined;
+
     const composeCallerOnPayload = async (
       payload: unknown,
       payloadModel: Model<Api>,
@@ -118,6 +128,7 @@ export function createAnthropicOAuthStreamSimple(
         return upstream;
       }
 
+      versionSync?.recordRequest(upstream);
       return shapeAnthropicOAuthPayload(upstream);
     };
 
@@ -128,6 +139,7 @@ export function createAnthropicOAuthStreamSimple(
     return delegate(model as Model<"anthropic-messages">, context, {
       ...options,
       onPayload,
+      ...(versionSync ? { fetch: versionSync.fetch } : {}),
     });
   };
 }

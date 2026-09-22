@@ -66,6 +66,18 @@ export function resolveClaudeCodeVersion(
 }
 
 /**
+ * Reports whether an explicit {@link CLAUDE_CODE_VERSION_ENV} override is set.
+ *
+ * An override is absolute: `src/billing-version-sync.ts` consults this to
+ * leave a user's pin alone rather than raising it from Pi's reported version.
+ */
+export function hasClaudeCodeVersionOverride(
+  environment: NodeJS.ProcessEnv = process.env,
+): boolean {
+  return Boolean(environment[CLAUDE_CODE_VERSION_ENV]?.trim());
+}
+
+/**
  * Matches the `claude-cli/X.Y.Z` token in a `user-agent` header.
  *
  * The leading boundary keeps `notclaude-cli/2.1.280` from matching, and the

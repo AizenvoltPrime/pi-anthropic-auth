@@ -190,4 +190,46 @@ describe("createAnthropicOAuthStreamSimple", () => {
 
     assert.ok(texts[0]?.includes("x-anthropic-billing-header:"));
   });
+
+  // The billing-version sync needs its own seam at the transport: it reads
+  // Pi's `user-agent: claude-cli/<version>` off the built request, which only
+  // exists at the fetch boundary.
+  test("injects a fetch wrapper for OAuth access tokens", () => {
+    wrapped(MODEL, CONTEXT, { apiKey: OAUTH_TOKEN });
+
+    assert.equal(typeof calls[0]?.options?.fetch, "function");
+  });
+
+  test("leaves fetch untouched for API-key requests", () => {
+    const callerFetch = (() => Promise.resolve(new Response())) as typeof fetch;
+
+    wrapped(MODEL, CONTEXT, { apiKey: API_KEY, fetch: callerFetch });
+
+    assert.equal(calls[0]?.options?.fetch, callerFetch);
+  });
+
+  test("does not add a fetch to API-key requests that had none", () => {
+    wrapped(MODEL, CONTEXT, { apiKey: API_KEY });
+
+    assert.equal(calls[0]?.options?.fetch, undefined);
+  });
+
+  test("composes a caller-provided fetch for OAuth requests", async () => {
+    let received: RequestInit | undefined;
+    const callerFetch = ((_input: unknown, init?: RequestInit) => {
+      received = init;
+      return Promise.resolve(new Response());
+    }) as typeof fetch;
+
+    wrapped(MODEL, CONTEXT, { apiKey: OAUTH_TOKEN, fetch: callerFetch });
+
+    const injected = calls[0]?.options?.fetch;
+    assert.ok(injected);
+    await injected("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      body: "{}",
+    });
+
+    assert.equal(received?.method, "POST");
+  });
 });
