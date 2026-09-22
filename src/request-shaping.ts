@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { MessageBlock, MessageParam } from "./anthropic-message";
 import {
   BILLING_HEADER_POSITIONS,
   BILLING_HEADER_SALT,
@@ -15,18 +16,6 @@ type TextBlock = {
   type: "text";
   text: string;
   cache_control?: unknown;
-  [key: string]: unknown;
-};
-
-type MessageBlock = {
-  type?: string;
-  text?: string;
-  [key: string]: unknown;
-};
-
-type MessageParam = {
-  role?: string;
-  content?: string | MessageBlock[];
   [key: string]: unknown;
 };
 
