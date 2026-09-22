@@ -1,11 +1,10 @@
-import { createHash } from "node:crypto";
 import type { MessageBlock, MessageParam } from "./anthropic-message";
-import { resolveClaudeCodeVersion } from "./claude-code-version";
 import {
-  BILLING_HEADER_POSITIONS,
-  BILLING_HEADER_SALT,
-  CLAUDE_CODE_ENTRYPOINT,
-} from "./constants";
+  BILLING_HEADER_MARKER,
+  buildBillingHeaderValue,
+  getFirstUserText,
+} from "./billing-header";
+import { resolveClaudeCodeVersion } from "./claude-code-version";
 import { debugLog, isToolUseOnlyDebugEnabled } from "./debug";
 import {
   shapeSystemBlocks,
@@ -42,52 +41,6 @@ function isAnthropicMessagesPayload(
   );
 }
 
-function getFirstUserText(messages: MessageParam[]): string {
-  const firstUserMessage = messages.find((message) => message.role === "user");
-  if (!firstUserMessage) return "";
-
-  if (typeof firstUserMessage.content === "string") {
-    return firstUserMessage.content;
-  }
-
-  if (!Array.isArray(firstUserMessage.content)) {
-    return "";
-  }
-
-  const firstTextBlock = firstUserMessage.content.find(
-    (block) => block.type === "text" && typeof block.text === "string",
-  );
-
-  return typeof firstTextBlock?.text === "string" ? firstTextBlock.text : "";
-}
-
-function buildBillingHeaderValue(messages: MessageParam[]): string | undefined {
-  const messageText = getFirstUserText(messages);
-  if (!messageText) {
-    return undefined;
-  }
-
-  const claudeCodeVersion = resolveClaudeCodeVersion();
-  const cch = createHash("sha256")
-    .update(messageText)
-    .digest("hex")
-    .slice(0, 5);
-  const sampledCharacters = BILLING_HEADER_POSITIONS.map(
-    (index) => messageText[index] || "0",
-  ).join("");
-  const suffix = createHash("sha256")
-    .update(`${BILLING_HEADER_SALT}${sampledCharacters}${claudeCodeVersion}`)
-    .digest("hex")
-    .slice(0, 3);
-
-  return [
-    "x-anthropic-billing-header:",
-    `cc_version=${claudeCodeVersion}.${suffix};`,
-    `cc_entrypoint=${CLAUDE_CODE_ENTRYPOINT};`,
-    `cch=${cch};`,
-  ].join(" ");
-}
-
 /**
  * Coerce a payload's `system` field into an array of text blocks.
  *
@@ -121,7 +74,10 @@ function prependBillingHeader(
   system: unknown,
   messages: MessageParam[],
 ): unknown {
-  const billingHeader = buildBillingHeaderValue(messages);
+  const billingHeader = buildBillingHeaderValue(
+    getFirstUserText(messages),
+    resolveClaudeCodeVersion(),
+  );
   if (!billingHeader) {
     return system;
   }
@@ -129,9 +85,7 @@ function prependBillingHeader(
   const systemBlocks = normalizeSystemBlocks(system);
 
   if (
-    systemBlocks.some((block) =>
-      block.text.includes("x-anthropic-billing-header:"),
-    )
+    systemBlocks.some((block) => block.text.includes(BILLING_HEADER_MARKER))
   ) {
     return systemBlocks;
   }

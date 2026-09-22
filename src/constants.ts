@@ -31,24 +31,6 @@ export const MINIMAL_ANTHROPIC_OAUTH_PROMPT = [
 ].join("\n");
 
 // ---------------------------------------------------------------------------
-// Billing header constants
-//
-// These values are used to build the x-anthropic-billing-header injected into
-// OAuth requests.  They must match the values Anthropic's backend expects for
-// the current Claude Code release.  The version itself lives in
-// `src/claude-code-version.ts`.
-// ---------------------------------------------------------------------------
-
-/** Salt used in the billing header suffix hash. */
-export const BILLING_HEADER_SALT = "59cf53e54c78";
-
-/** Character positions sampled from the first user message for the billing hash. */
-export const BILLING_HEADER_POSITIONS = [4, 7, 20] as const;
-
-/** Entrypoint identifier included in the billing header. */
-export const CLAUDE_CODE_ENTRYPOINT = "sdk-cli";
-
-// ---------------------------------------------------------------------------
 // Section-aware sanitizer constants
 //
 // Pi 0.86.0 renders its system prompt as an untagged preamble followed by

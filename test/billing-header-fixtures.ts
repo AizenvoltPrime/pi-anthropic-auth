@@ -2,10 +2,13 @@ import { createHash } from "node:crypto";
 import { onTestFinished } from "vitest";
 
 import {
+  BILLING_HEADER_POSITIONS,
+  BILLING_HEADER_SALT,
+} from "#src/billing-header";
+import {
   CLAUDE_CODE_VERSION,
   CLAUDE_CODE_VERSION_ENV,
 } from "#src/claude-code-version";
-import { BILLING_HEADER_POSITIONS, BILLING_HEADER_SALT } from "#src/constants";
 
 /**
  * Sets the Claude Code version override for one test and restores the previous
