@@ -64,3 +64,59 @@ export function resolveClaudeCodeVersion(
   }
   return configuredVersion;
 }
+
+/**
+ * Matches the `claude-cli/X.Y.Z` token in a `user-agent` header.
+ *
+ * The leading boundary keeps `notclaude-cli/2.1.280` from matching, and the
+ * trailing boundary rejects a version with extra components.
+ */
+const CLAUDE_CLI_USER_AGENT_PATTERN =
+  /(?:^|\s)claude-cli\/(\d+\.\d+\.\d+)(?=\s|$)/;
+
+/**
+ * Reads the Claude Code version out of Pi's own `user-agent` header.
+ *
+ * Pi's built-in Anthropic transport sends `user-agent: claude-cli/<version>`
+ * from a module-private constant, so this header is the only runtime handle on
+ * the version Pi believes it is.  Returns `undefined` when the header is
+ * absent, belongs to another client, or carries a version this package would
+ * not emit itself.
+ */
+export function readClaudeCliVersion(
+  userAgent: string | null | undefined,
+): string | undefined {
+  if (!userAgent) {
+    return undefined;
+  }
+  return CLAUDE_CLI_USER_AGENT_PATTERN.exec(userAgent)?.[1];
+}
+
+/**
+ * Returns whichever of two `X.Y.Z` versions is higher, comparing numerically.
+ *
+ * `baseline` wins ties and wins outright when `candidate` is absent or is not
+ * a bare `X.Y.Z` version: an unparseable upstream signal must never lower the
+ * version this package reports.
+ */
+export function higherVersion(
+  baseline: string,
+  candidate: string | undefined,
+): string {
+  if (!candidate || !CLAUDE_CODE_VERSION_PATTERN.test(candidate)) {
+    return baseline;
+  }
+
+  const baselineParts = baseline.split(".").map(Number);
+  const candidateParts = candidate.split(".").map(Number);
+
+  for (let index = 0; index < candidateParts.length; index += 1) {
+    const baselinePart = baselineParts[index] ?? 0;
+    const candidatePart = candidateParts[index] ?? 0;
+    if (candidatePart !== baselinePart) {
+      return candidatePart > baselinePart ? candidate : baseline;
+    }
+  }
+
+  return baseline;
+}
