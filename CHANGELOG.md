@@ -1,5 +1,15 @@
 # Changelog
 
+## [3.2.1](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.2.0...v3.2.1) (2026-09-23)
+
+
+### Documentation
+
+* **retro:** add retro notes for issue #75 ([efa65f1](https://github.com/gotgenes/pi-anthropic-auth/commit/efa65f19c68562b41a979e607ccde9c866ff7718))
+* port the shell-traps skill and zsh shell facts from pi-packages ([#76](https://github.com/gotgenes/pi-anthropic-auth/issues/76)) ([5939fd1](https://github.com/gotgenes/pi-anthropic-auth/commit/5939fd19ecba989acdc2b5167b387e6cdc088260))
+* dispatch the Tidy-First assessor during planning ([#76](https://github.com/gotgenes/pi-anthropic-auth/issues/76)) ([0cd4aeb](https://github.com/gotgenes/pi-anthropic-auth/commit/0cd4aeb1803e4c7260223709dd2637d1657d8cad))
+* add a skill index to AGENTS.md ([#76](https://github.com/gotgenes/pi-anthropic-auth/issues/76)) ([55ae7bc](https://github.com/gotgenes/pi-anthropic-auth/commit/55ae7bc1d7dfa686538b779d57d6ac1443a640f1))
+
 ## [3.2.0](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.1.0...v3.2.0) (2026-09-23)
 
 
