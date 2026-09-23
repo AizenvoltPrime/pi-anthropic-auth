@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.2.2](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.2.1...v3.2.2) (2026-09-23)
+
+
+### Bug Fixes
+
+* **release:** exclude AGENTS.md and top-level tooling config from the release scope ([#78](https://github.com/gotgenes/pi-anthropic-auth/issues/78)) ([15f1f11](https://github.com/gotgenes/pi-anthropic-auth/commit/15f1f11e0e2b8a52c6c5858d23cd7ef1376b4fa3)), closes [#78](https://github.com/gotgenes/pi-anthropic-auth/issues/78)
+
+### Documentation
+
+* close out issue #65 as resolved upstream in pi 0.87.1 ([3c39718](https://github.com/gotgenes/pi-anthropic-auth/commit/3c397180121289ab31d404c0cccca556df854521))
+
 ## [3.2.1](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.2.0...v3.2.1) (2026-09-23)
 
 
