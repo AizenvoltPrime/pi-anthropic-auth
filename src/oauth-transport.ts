@@ -6,6 +6,10 @@ import type {
   TranscriptContext,
 } from "@earendil-works/pi-ai";
 import { createBillingVersionSync } from "./billing-version-sync";
+import {
+  createLearnedClaudeCodeFloor,
+  type LearnedClaudeCodeFloor,
+} from "./claude-code-version";
 import type { AnthropicStreamSimpleDelegate } from "./host-transport";
 import { shapeAnthropicOAuthPayload } from "./request-shaping";
 
@@ -89,9 +93,14 @@ export function isAnthropicOAuthToken(
  *   also have recursed, because `registerProvider` bridged this wrapper into
  *   that slot.  The related 0.79.x lazy-registration clobber is precluded by
  *   the >=0.80.8 peer floor (Issue #28, Issue #40).
+ * @param learnedFloor The Claude Code version floor learned from Anthropic's
+ *   `claude_code_version_too_old` rejections.  It is owned here, once per
+ *   registered wrapper, because it must outlive the per-request billing
+ *   version sync; the parameter exists so tests can observe it.
  */
 export function createAnthropicOAuthStreamSimple(
   delegate: AnthropicStreamSimpleDelegate,
+  learnedFloor: LearnedClaudeCodeFloor = createLearnedClaudeCodeFloor(),
 ): AnthropicStreamSimple {
   return (model, context, options) => {
     // Resolved once per request rather than per payload: the token decides
@@ -107,7 +116,7 @@ export function createAnthropicOAuthStreamSimple(
     // constructed only for OAuth requests, so an API-key request keeps the
     // caller's `fetch` (or none) untouched.
     const versionSync = isOAuthRequest
-      ? createBillingVersionSync(options.fetch)
+      ? createBillingVersionSync(learnedFloor, options.fetch)
       : undefined;
 
     const composeCallerOnPayload = async (

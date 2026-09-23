@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import type { FetchFunction } from "@earendil-works/pi-ai";
 import { describe, test } from "vitest";
 import { createBillingVersionSync } from "#src/billing-version-sync";
-import { CLAUDE_CODE_VERSION } from "#src/claude-code-version";
+import {
+  CLAUDE_CODE_VERSION,
+  createLearnedClaudeCodeFloor,
+} from "#src/claude-code-version";
 import {
   buildExpectedBillingHeader,
   withVersionOverride,
@@ -78,7 +81,10 @@ async function dispatch(
   { record = true }: { record?: boolean } = {},
 ): Promise<string> {
   const base = createCapturingFetch();
-  const sync = createBillingVersionSync(base.fetch);
+  const sync = createBillingVersionSync(
+    createLearnedClaudeCodeFloor(),
+    base.fetch,
+  );
   if (record) {
     sync.recordRequest(shapedPayload());
   }
@@ -140,7 +146,10 @@ describe("createBillingVersionSync", () => {
     withVersionOverride("2.1.300");
 
     const base = createCapturingFetch();
-    const sync = createBillingVersionSync(base.fetch);
+    const sync = createBillingVersionSync(
+      createLearnedClaudeCodeFloor(),
+      base.fetch,
+    );
     sync.recordRequest(shapedPayload());
     const original = JSON.stringify(shapedPayload("2.1.300"));
     await sync.fetch(
@@ -153,7 +162,10 @@ describe("createBillingVersionSync", () => {
 
   test("leaves a non-string body untouched", async () => {
     const base = createCapturingFetch();
-    const sync = createBillingVersionSync(base.fetch);
+    const sync = createBillingVersionSync(
+      createLearnedClaudeCodeFloor(),
+      base.fetch,
+    );
     sync.recordRequest(shapedPayload());
     const body = new Uint8Array([1, 2, 3]);
     await sync.fetch(
@@ -187,7 +199,10 @@ describe("createBillingVersionSync", () => {
 
   test("forwards the request URL and other init fields to the base fetch", async () => {
     const base = createCapturingFetch();
-    const sync = createBillingVersionSync(base.fetch);
+    const sync = createBillingVersionSync(
+      createLearnedClaudeCodeFloor(),
+      base.fetch,
+    );
     sync.recordRequest(shapedPayload());
     await sync.fetch(
       "https://api.anthropic.com/v1/messages",
@@ -201,7 +216,10 @@ describe("createBillingVersionSync", () => {
 
   test("returns the base fetch's response", async () => {
     const base = createCapturingFetch();
-    const sync = createBillingVersionSync(base.fetch);
+    const sync = createBillingVersionSync(
+      createLearnedClaudeCodeFloor(),
+      base.fetch,
+    );
     sync.recordRequest(shapedPayload());
     const response = await sync.fetch(
       "https://api.anthropic.com/v1/messages",

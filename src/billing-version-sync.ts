@@ -4,6 +4,7 @@ import { buildBillingHeaderValue, getFirstUserText } from "./billing-header";
 import {
   hasClaudeCodeVersionOverride,
   higherVersion,
+  type LearnedClaudeCodeFloor,
   readClaudeCliVersion,
   resolveClaudeCodeVersion,
 } from "./claude-code-version";
@@ -59,41 +60,53 @@ function readUserAgent(
 }
 
 export function createBillingVersionSync(
+  learnedFloor: LearnedClaudeCodeFloor,
   baseFetch?: FetchFunction,
 ): BillingVersionSync {
   let firstUserText = "";
 
   /**
-   * Returns the body to send when the billing header needs raising, or
-   * `undefined` to send the original untouched.
+   * Returns `body` with its billing header moved from `fromVersion` to
+   * `toVersion`, or `undefined` when the body cannot be rebuilt.
    *
    * Every bail-out is deliberate: we never construct a body we cannot verify
    * against the exact header string shaping emitted moments earlier.
    */
-  function upgradedBody(
-    userAgent: string | undefined,
+  function rebuildBody(
     body: BodyInit | null | undefined,
+    fromVersion: string,
+    toVersion: string,
   ): string | undefined {
-    // An explicit user pin is absolute and is never raised.
     if (!firstUserText || typeof body !== "string") return undefined;
-    if (hasClaudeCodeVersionOverride()) return undefined;
 
-    const current = resolveClaudeCodeVersion();
-    const target = higherVersion(current, readClaudeCliVersion(userAgent));
-    if (target === current) return undefined;
-
-    const currentHeader = buildBillingHeaderValue(firstUserText, current);
-    const targetHeader = buildBillingHeaderValue(firstUserText, target);
-    if (!currentHeader || !targetHeader || !body.includes(currentHeader)) {
+    const fromHeader = buildBillingHeaderValue(firstUserText, fromVersion);
+    const toHeader = buildBillingHeaderValue(firstUserText, toVersion);
+    if (!fromHeader || !toHeader || !body.includes(fromHeader)) {
       return undefined;
     }
 
-    return body.replace(currentHeader, targetHeader);
+    return body.replace(fromHeader, toHeader);
+  }
+
+  /**
+   * The version this request's billing header should carry: the pin raised
+   * to Pi's reported version and to any learned floor.  An explicit user pin
+   * is absolute and is never raised.
+   */
+  function targetVersion(userAgent: string | undefined): string {
+    const pinned = resolveClaudeCodeVersion();
+    if (hasClaudeCodeVersionOverride()) return pinned;
+    return learnedFloor.applyTo(
+      higherVersion(pinned, readClaudeCliVersion(userAgent)),
+    );
   }
 
   const syncFetch = ((input, init) => {
     const dispatch = baseFetch ?? globalThis.fetch;
-    const body = upgradedBody(readUserAgent(input, init), init?.body);
+    const pinned = resolveClaudeCodeVersion();
+    const target = targetVersion(readUserAgent(input, init));
+    const body =
+      target === pinned ? undefined : rebuildBody(init?.body, pinned, target);
     return dispatch(input, body === undefined ? init : { ...init, body });
   }) as FetchFunction;
 
