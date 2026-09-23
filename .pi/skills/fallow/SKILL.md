@@ -1,15 +1,15 @@
 ---
 name: fallow
 description: |
-  Codebase intelligence via fallow CLI — dead code, duplication, complexity, refactoring targets.
-  Load when investigating unused code, planning refactors, or reviewing fallow output.
+  Load before running `fallow` or reading its output: dead code, duplication, complexity,
+  symbol traces, change review, and coverage gaps.
 ---
 
 # Fallow
 
-Fallow is a static analysis tool for TypeScript/JavaScript installed as a devDependency.
-It finds unused code, duplication, complexity hotspots, and refactoring targets.
-Run it via `pnpm fallow` scripts — never `npx`.
+Fallow is a static analysis tool for TypeScript/JavaScript installed as a devDependency (2.104.0 at the time of writing; `pnpm exec fallow --version`).
+It finds unused code, duplication, complexity hotspots, and refactoring targets, and it answers targeted questions about one file or one symbol.
+Run it via `pnpm fallow` scripts or `pnpm fallow <subcommand>`, never `npx`.
 
 ## Quick reference
 
@@ -21,11 +21,26 @@ pnpm fallow:dead-code      # unused files, exports, types, deps
 pnpm fallow:dupes          # duplicated code blocks
 ```
 
+Question-shaped subcommands, each scoped smaller than a full run:
+
+| Question | Command |
+| --- | --- |
+| What are this file's exports, imports, importers? | `fallow inspect --file <path>` |
+| Who consumes this symbol? | `fallow dead-code --trace <file>:<symbol>` |
+| What structural decisions does this change embed? | `fallow decision-surface --base <ref> --format json` |
+| Where should a reviewer look in this change? | `fallow review --brief --base <ref>` |
+| What is untested but reachable? | `fallow health --coverage-gaps` |
+| What does this finding mean? | `fallow explain <issue-type>` |
+
+The pi-packages copy of this skill documents fallow 3.x; `guard`, `suppressions`, `similar-code`, `--type-aware`, and `--symbol-impact` do not exist on 2.104.0.
+Check `pnpm exec fallow <subcommand> --help` before adopting a command from there.
+
 ## JSON output for programmatic use
 
 Always invoke via `pnpm --silent fallow … --format json --quiet 2>/dev/null` and append `|| true`.
 The `--silent` is load-bearing: fallow exits 1 when issues are found (normal), and without `--silent` pnpm appends `[ELIFECYCLE] Command failed with exit code 1.` to **stdout** after the JSON — `json.load` then fails with "Extra data", and `2>/dev/null` does not strip it.
 Only exit code 2 is a real error.
+Some subcommands print nothing in human format under `--quiet` (`decision-surface` and `review --brief` both, measured on 2.104.0) — read `decision-surface` as JSON, and run `review --brief` without `--quiet`.
 
 ```bash
 pnpm --silent fallow dead-code --format json --quiet 2>/dev/null || true
@@ -38,11 +53,38 @@ pnpm --silent fallow health --score --targets --format json --quiet 2>/dev/null 
 | --- | --- |
 | `--unused-exports` | Filter to only unused exports |
 | `--unused-files` | Filter to only unused files |
-| `--changed-since main` | Only files changed since a ref |
+| `--changed-since main` | Only files changed since a ref (alias `--base`) |
 | `--score` | Show health score (0–100) |
 | `--hotspots` | Riskiest files by churn × complexity |
 | `--targets` | Ranked refactoring recommendations |
 | `--mode semantic` | Duplication: catch renamed-variable clones |
+
+## Proving "nothing else calls this"
+
+```bash
+pnpm --silent fallow dead-code --trace <file>:<symbol> --quiet
+```
+
+`--trace` reads the module graph syntactically; on fallow 3.x, pi-packages measured it listing a consumer that takes the symbol as an object-literal shorthand property, which the type-aware `--symbol-impact` missed.
+It cannot see a fully dynamic `import(variable)`; grep the symbol's name as well before deleting.
+
+## Coverage gaps
+
+`health --coverage-gaps` is a static question: which runtime files and exports no test dependency path reaches.
+Read it as a reachability lead, not a coverage number, and discount barrels — an export re-exported from `index.ts` whose tests import the source module directly reads as untested.
+CRAP scores are **estimated** from export references unless you feed real Istanbul coverage with `--coverage`, which needs `@vitest/coverage-istanbul` (not installed here).
+
+## Change review
+
+```bash
+pnpm --silent fallow decision-surface --base <ref> --format json --quiet 2>/dev/null || true
+pnpm --silent fallow review --brief --base <ref>
+```
+
+`decision-surface` returns at most five `signal_id`-anchored questions (`public-api-contract`, `coupling-boundary`, `dependency`); it always exits 0 and gates nothing.
+This repo declares no `boundaries` zones, so `coupling-boundary` does not fire here.
+`review --brief` renders the same analysis as an orientation brief ("where do I look?") rather than a verdict.
+The `pre-completion-reviewer` runs the first of these over the range it reviews; a judgment it reports must cite a `signal_id` fallow emitted.
 
 ## Configuration
 
@@ -79,7 +121,7 @@ pnpm fallow dead-code        # verify
 
 ## Key gotchas
 
-1. Fallow uses syntactic analysis only (no TypeScript compiler) — fully dynamic `import(variable)` is not resolved.
+1. The default run resolves the module graph syntactically (no TypeScript compiler), so a fully dynamic `import(variable)` is not resolved.
 2. Re-export chains through barrel files are resolved correctly.
 3. `--changed-since` is additive — only new issues in changed files.
 4. Never run `fallow watch` — it is interactive and never exits.
