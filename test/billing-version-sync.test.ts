@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import type { FetchFunction } from "@earendil-works/pi-ai";
-import { describe, test } from "vitest";
+import { describe, test, vi } from "vitest";
 import { createBillingVersionSync } from "#src/billing-version-sync";
 import {
   CLAUDE_CODE_VERSION,
@@ -10,6 +10,10 @@ import {
   buildExpectedBillingHeader,
   withVersionOverride,
 } from "#test/billing-header-fixtures";
+import {
+  claudeCodeVersionTooOldResponse,
+  okResponse,
+} from "#test/version-rejection-fixtures";
 
 const USER_TEXT = "Summarize the repository status.";
 const PI_AHEAD = "2.9.9";
@@ -227,5 +231,233 @@ describe("createBillingVersionSync", () => {
     );
 
     assert.equal(response, RESPONSE_STUB);
+  });
+});
+
+const MESSAGES_URL = "https://api.anthropic.com/v1/messages";
+const REQUIRED = "2.9.0";
+
+/** Returns the string body the base fetch received on call `index`. */
+function bodyOfCall(base: CapturingFetch, index: number): string {
+  const body = base.calls[index]?.init?.body;
+  assert.ok(typeof body === "string");
+  return body;
+}
+
+describe("recovery from claude_code_version_too_old", () => {
+  test("retries once with the billing header at the required version", async () => {
+    const recovered = okResponse();
+    const base = createCapturingFetch([
+      claudeCodeVersionTooOldResponse(REQUIRED),
+      recovered,
+    ]);
+    const sync = createBillingVersionSync(
+      createLearnedClaudeCodeFloor(),
+      base.fetch,
+    );
+    sync.recordRequest(shapedPayload());
+
+    const response = await sync.fetch(MESSAGES_URL, requestInit(undefined));
+
+    assert.equal(base.calls.length, 2);
+    assert.equal(bodyOfCall(base, 1), JSON.stringify(shapedPayload(REQUIRED)));
+    assert.equal(response, recovered);
+  });
+
+  test("changes nothing outside the billing header block on retry", async () => {
+    const base = createCapturingFetch([
+      claudeCodeVersionTooOldResponse(REQUIRED),
+      okResponse(),
+    ]);
+    const sync = createBillingVersionSync(
+      createLearnedClaudeCodeFloor(),
+      base.fetch,
+    );
+    sync.recordRequest(shapedPayload());
+
+    await sync.fetch(MESSAGES_URL, requestInit(undefined));
+
+    const excise = (body: string) =>
+      body.replace(/x-anthropic-billing-header:[^"]*/, "<billing>");
+    assert.equal(excise(bodyOfCall(base, 1)), excise(bodyOfCall(base, 0)));
+    assert.notEqual(bodyOfCall(base, 1), bodyOfCall(base, 0));
+  });
+
+  test("reuses the original URL and init fields on retry", async () => {
+    const base = createCapturingFetch([
+      claudeCodeVersionTooOldResponse(REQUIRED),
+      okResponse(),
+    ]);
+    const sync = createBillingVersionSync(
+      createLearnedClaudeCodeFloor(),
+      base.fetch,
+    );
+    sync.recordRequest(shapedPayload());
+    const signal = new AbortController().signal;
+
+    await sync.fetch(MESSAGES_URL, { ...requestInit(undefined), signal });
+
+    assert.equal(base.calls[1]?.input, MESSAGES_URL);
+    assert.equal(base.calls[1]?.init?.method, "POST");
+    assert.equal(base.calls[1]?.init?.signal, signal);
+  });
+
+  test("sends later requests at the learned floor without a rejection", async () => {
+    const floor = createLearnedClaudeCodeFloor();
+    const first = createCapturingFetch([
+      claudeCodeVersionTooOldResponse(REQUIRED),
+      okResponse(),
+    ]);
+    const firstSync = createBillingVersionSync(floor, first.fetch);
+    firstSync.recordRequest(shapedPayload());
+    await firstSync.fetch(MESSAGES_URL, requestInit(undefined));
+
+    const second = createCapturingFetch([okResponse()]);
+    const secondSync = createBillingVersionSync(floor, second.fetch);
+    secondSync.recordRequest(shapedPayload());
+    await secondSync.fetch(MESSAGES_URL, requestInit(undefined));
+
+    assert.equal(second.calls.length, 1);
+    assert.equal(
+      bodyOfCall(second, 0),
+      JSON.stringify(shapedPayload(REQUIRED)),
+    );
+  });
+
+  test("returns a success response untouched without reading its body", async () => {
+    const success = okResponse();
+    const clone = vi.spyOn(success, "clone");
+    const base = createCapturingFetch([success]);
+    const sync = createBillingVersionSync(
+      createLearnedClaudeCodeFloor(),
+      base.fetch,
+    );
+    sync.recordRequest(shapedPayload());
+
+    const response = await sync.fetch(MESSAGES_URL, requestInit(undefined));
+
+    assert.equal(response, success);
+    assert.equal(response.bodyUsed, false);
+    assert.equal(clone.mock.calls.length, 0);
+    assert.equal(base.calls.length, 1);
+  });
+
+  test("returns another 400 untouched with its body still readable", async () => {
+    const text = '{"type":"error","error":{"type":"invalid_request_error"}}';
+    const rejection = new Response(text, { status: 400 });
+    const base = createCapturingFetch([rejection]);
+    const sync = createBillingVersionSync(
+      createLearnedClaudeCodeFloor(),
+      base.fetch,
+    );
+    sync.recordRequest(shapedPayload());
+
+    const response = await sync.fetch(MESSAGES_URL, requestInit(undefined));
+
+    assert.equal(response, rejection);
+    assert.equal(await response.text(), text);
+    assert.equal(base.calls.length, 1);
+  });
+
+  test("does not retry when an explicit version override is set", async () => {
+    withVersionOverride("2.1.260");
+    const floor = createLearnedClaudeCodeFloor();
+    const base = createCapturingFetch([
+      claudeCodeVersionTooOldResponse(REQUIRED),
+      okResponse(),
+    ]);
+    const sync = createBillingVersionSync(floor, base.fetch);
+    sync.recordRequest(shapedPayload());
+
+    const response = await sync.fetch(
+      MESSAGES_URL,
+      requestInit(undefined, JSON.stringify(shapedPayload("2.1.260"))),
+    );
+
+    assert.equal(base.calls.length, 1);
+    assert.equal(response.status, 400);
+    assert.equal(floor.applyTo("1.0.0"), "1.0.0");
+  });
+
+  test("does not apply a learned floor over an explicit version override", async () => {
+    withVersionOverride("2.1.260");
+    const floor = createLearnedClaudeCodeFloor();
+    floor.learn(REQUIRED);
+    const base = createCapturingFetch();
+    const sync = createBillingVersionSync(floor, base.fetch);
+    sync.recordRequest(shapedPayload());
+    const original = JSON.stringify(shapedPayload("2.1.260"));
+
+    await sync.fetch(MESSAGES_URL, requestInit(undefined, original));
+
+    assert.equal(sentBody(base), original);
+  });
+
+  test("does not retry when the required version is not above the one sent", async () => {
+    const base = createCapturingFetch([
+      claudeCodeVersionTooOldResponse("2.1.200"),
+      okResponse(),
+    ]);
+    const sync = createBillingVersionSync(
+      createLearnedClaudeCodeFloor(),
+      base.fetch,
+    );
+    sync.recordRequest(shapedPayload());
+
+    const response = await sync.fetch(MESSAGES_URL, requestInit(undefined));
+
+    assert.equal(base.calls.length, 1);
+    assert.equal(response.status, 400);
+  });
+
+  test("does not retry when the rejection names no required version", async () => {
+    const base = createCapturingFetch([
+      claudeCodeVersionTooOldResponse(undefined),
+      okResponse(),
+    ]);
+    const sync = createBillingVersionSync(
+      createLearnedClaudeCodeFloor(),
+      base.fetch,
+    );
+    sync.recordRequest(shapedPayload());
+
+    const response = await sync.fetch(MESSAGES_URL, requestInit(undefined));
+
+    assert.equal(base.calls.length, 1);
+    assert.equal(response.status, 400);
+  });
+
+  test("does not retry a body it cannot rebuild", async () => {
+    const base = createCapturingFetch([
+      claudeCodeVersionTooOldResponse(REQUIRED),
+      okResponse(),
+    ]);
+    const sync = createBillingVersionSync(
+      createLearnedClaudeCodeFloor(),
+      base.fetch,
+    );
+
+    const response = await sync.fetch(MESSAGES_URL, requestInit(undefined));
+
+    assert.equal(base.calls.length, 1);
+    assert.equal(response.status, 400);
+  });
+
+  test("retries at most once when the retry is rejected too", async () => {
+    const base = createCapturingFetch([
+      claudeCodeVersionTooOldResponse(REQUIRED),
+      claudeCodeVersionTooOldResponse("2.9.5", REQUIRED),
+      okResponse(),
+    ]);
+    const sync = createBillingVersionSync(
+      createLearnedClaudeCodeFloor(),
+      base.fetch,
+    );
+    sync.recordRequest(shapedPayload());
+
+    const response = await sync.fetch(MESSAGES_URL, requestInit(undefined));
+
+    assert.equal(base.calls.length, 2);
+    assert.equal(response.status, 400);
   });
 });

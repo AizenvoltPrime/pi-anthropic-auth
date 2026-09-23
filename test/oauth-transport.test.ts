@@ -12,6 +12,10 @@ import {
   createAnthropicOAuthStreamSimple,
   isAnthropicOAuthToken,
 } from "#src/oauth-transport";
+import {
+  claudeCodeVersionTooOldResponse,
+  okResponse,
+} from "#test/version-rejection-fixtures";
 
 const OAUTH_TOKEN = "sk-ant-oat01-example-access-token";
 const API_KEY = "sk-ant-api03-example-key";
@@ -231,5 +235,37 @@ describe("createAnthropicOAuthStreamSimple", () => {
     });
 
     assert.equal(received?.method, "POST");
+  });
+
+  // The learned floor must outlive a single `streamSimple` call, or every
+  // request to a gated model would pay the rejected round trip again.
+  test("shares the learned Claude Code floor across requests", async () => {
+    const sentBodies: string[] = [];
+    const responses = [
+      claudeCodeVersionTooOldResponse("2.9.0"),
+      okResponse(),
+      okResponse(),
+    ];
+    const callerFetch = ((_input: unknown, init?: RequestInit) => {
+      sentBodies.push(typeof init?.body === "string" ? init.body : "");
+      const response = responses.shift();
+      assert.ok(response);
+      return Promise.resolve(response);
+    }) as typeof fetch;
+
+    for (const index of [0, 1]) {
+      wrapped(MODEL, CONTEXT, { apiKey: OAUTH_TOKEN, fetch: callerFetch });
+      const options = calls[index]?.options;
+      const shaped = await options?.onPayload?.(samplePayload(), MODEL);
+      assert.ok(options?.fetch);
+      await options.fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        body: JSON.stringify(shaped),
+      });
+    }
+
+    assert.equal(sentBodies.length, 3);
+    assert.match(sentBodies[1] ?? "", /cc_version=2\.9\.0\./);
+    assert.match(sentBodies[2] ?? "", /cc_version=2\.9\.0\./);
   });
 });
