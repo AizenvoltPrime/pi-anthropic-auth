@@ -11,6 +11,8 @@ import {
 import { debugLog } from "./debug";
 import {
   type ClaudeCodeVersionRejection,
+  describeRecoveryHint,
+  type RecoveryHintReason,
   readClaudeCodeVersionRejection,
 } from "./version-rejection";
 
@@ -53,35 +55,6 @@ export interface BillingVersionSync {
    * can reach.
    */
   fetch: FetchFunction;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-/**
- * Reads a response as a `claude_code_version_too_old` rejection.
- *
- * Only a 400 is inspected, and only through a clone, so a streaming success
- * response and any other error reach the SDK exactly as received.
- */
-async function readVersionRejection(
-  response: Response,
-): Promise<ClaudeCodeVersionRejection | undefined> {
-  if (response.status !== 400) return undefined;
-  return readClaudeCodeVersionRejection(await response.clone().text());
-}
-
-/** Reads the `user-agent` header off whichever argument carries it. */
-function readUserAgent(
-  input: Parameters<FetchFunction>[0],
-  init: RequestInit | undefined,
-): string | undefined {
-  const source =
-    init?.headers ?? (input instanceof Request ? input.headers : undefined);
-  return source
-    ? (new Headers(source).get("user-agent") ?? undefined)
-    : undefined;
 }
 
 export function createBillingVersionSync(
@@ -141,37 +114,68 @@ export function createBillingVersionSync(
     const rejection = await readVersionRejection(response);
     if (!rejection) return response;
 
-    const retryBody = recoveryBody(rejection, sentInit?.body, sentVersion);
-    if (retryBody === undefined) return response;
+    const recovery = planRecovery(rejection, sentInit?.body, sentVersion);
+    if (recovery.kind === "hint") {
+      return hintedResponse(response, rejection, recovery.reason);
+    }
 
     debugLog("claude-code-version-recovery", {
       sentVersion,
-      requiredVersion: rejection.requiredVersion,
+      requiredVersion: recovery.requiredVersion,
     });
     await response.body?.cancel();
-    return dispatch(input, { ...sentInit, body: retryBody });
+    const retried = await dispatch(input, { ...sentInit, body: recovery.body });
+    const retryRejection = await readVersionRejection(retried);
+    if (!retryRejection) return retried;
+
+    // One retry only: a second rejection is explained, never chased.
+    const second = planRecovery(
+      retryRejection,
+      recovery.body,
+      recovery.requiredVersion,
+    );
+    return hintedResponse(
+      retried,
+      retryRejection,
+      second.kind === "hint"
+        ? second.reason
+        : { kind: "set-override", requiredVersion: second.requiredVersion },
+    );
   }) as FetchFunction;
 
   /**
-   * Returns the body to retry a rejected request with, or `undefined` when
-   * recovery cannot help.
+   * Decides whether a rejected request can be retried at the floor Anthropic
+   * named, and if not, which hint explains why.
    *
-   * A floor Anthropic names is learned even when this request cannot be
-   * retried, so the next request goes out at it.  An explicit user pin is
-   * absolute, so it is neither retried nor taught to the floor.
+   * A named floor is learned even when this request cannot be retried, so the
+   * next request goes out at it.  An explicit user pin is absolute, so it is
+   * neither retried nor taught to the floor.
    */
-  function recoveryBody(
+  function planRecovery(
     rejection: ClaudeCodeVersionRejection,
     sentBody: BodyInit | null | undefined,
     sentVersion: string,
-  ): string | undefined {
+  ): Recovery {
     const required = rejection.requiredVersion;
-    if (!required || hasClaudeCodeVersionOverride()) return undefined;
+    if (hasClaudeCodeVersionOverride()) {
+      return hint({
+        kind: "override",
+        overrideVersion: resolveClaudeCodeVersion(),
+        requiredVersion: required,
+      });
+    }
+    if (!required)
+      return hint({ kind: "set-override", requiredVersion: undefined });
 
     learnedFloor.learn(required);
-    if (higherVersion(sentVersion, required) === sentVersion) return undefined;
-
-    return rebuildBody(sentBody, sentVersion, required);
+    const body = rebuildBody(sentBody, sentVersion, required);
+    if (body === undefined) {
+      return hint({ kind: "set-override", requiredVersion: required });
+    }
+    if (higherVersion(sentVersion, required) === sentVersion) {
+      return hint({ kind: "upgrade-pi", sentVersion });
+    }
+    return { kind: "retry", body, requiredVersion: required };
   }
 
   return {
@@ -183,4 +187,66 @@ export function createBillingVersionSync(
     },
     fetch: syncFetch,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * Reads a response as a `claude_code_version_too_old` rejection.
+ *
+ * Only a 400 is inspected, and only through a clone, so a streaming success
+ * response and any other error reach the SDK exactly as received.
+ */
+async function readVersionRejection(
+  response: Response,
+): Promise<ClaudeCodeVersionRejection | undefined> {
+  if (response.status !== 400) return undefined;
+  return readClaudeCodeVersionRejection(await response.clone().text());
+}
+
+/** What to do about a `claude_code_version_too_old` rejection. */
+type Recovery =
+  | { kind: "retry"; body: string; requiredVersion: string }
+  | { kind: "hint"; reason: RecoveryHintReason };
+
+function hint(reason: RecoveryHintReason): Recovery {
+  return { kind: "hint", reason };
+}
+
+/**
+ * Rebuilds a rejection with the recovery hint appended to `error.message`.
+ *
+ * Status and headers are kept, so the SDK still raises the same
+ * `BadRequestError` with the same `request-id`.  `content-length` and
+ * `content-encoding` are dropped because the new body is decoded and
+ * differently sized.
+ */
+async function hintedResponse(
+  response: Response,
+  rejection: ClaudeCodeVersionRejection,
+  reason: RecoveryHintReason,
+): Promise<Response> {
+  await response.body?.cancel();
+  const headers = new Headers(response.headers);
+  headers.delete("content-length");
+  headers.delete("content-encoding");
+  return new Response(rejection.withHint(describeRecoveryHint(reason)), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+/** Reads the `user-agent` header off whichever argument carries it. */
+function readUserAgent(
+  input: Parameters<FetchFunction>[0],
+  init: RequestInit | undefined,
+): string | undefined {
+  const source =
+    init?.headers ?? (input instanceof Request ? input.headers : undefined);
+  return source
+    ? (new Headers(source).get("user-agent") ?? undefined)
+    : undefined;
 }

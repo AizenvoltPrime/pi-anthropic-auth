@@ -7,12 +7,17 @@ import {
   createLearnedClaudeCodeFloor,
 } from "#src/claude-code-version";
 import {
+  describeRecoveryHint,
+  type RecoveryHintReason,
+} from "#src/version-rejection";
+import {
   buildExpectedBillingHeader,
   withVersionOverride,
 } from "#test/billing-header-fixtures";
 import {
   claudeCodeVersionTooOldResponse,
   okResponse,
+  REJECTION_REQUEST_ID,
 } from "#test/version-rejection-fixtures";
 
 const USER_TEXT = "Summarize the repository status.";
@@ -459,5 +464,148 @@ describe("recovery from claude_code_version_too_old", () => {
 
     assert.equal(base.calls.length, 2);
     assert.equal(response.status, 400);
+  });
+});
+
+/**
+ * Asserts `response` is the rejection with `reason`'s hint appended, and that
+ * everything a consumer might key on survived the rewrite.
+ */
+async function assertHinted(
+  response: Response,
+  reason: RecoveryHintReason,
+): Promise<void> {
+  assert.equal(response.status, 400);
+  assert.equal(response.headers.get("request-id"), REJECTION_REQUEST_ID);
+  assert.equal(response.headers.get("content-length"), null);
+
+  const body = (await response.json()) as {
+    type: string;
+    request_id: string;
+    error: { type: string; message: string; details: { error_code: string } };
+  };
+  assert.equal(body.type, "error");
+  assert.equal(body.request_id, REJECTION_REQUEST_ID);
+  assert.equal(body.error.type, "invalid_request_error");
+  assert.equal(body.error.details.error_code, "claude_code_version_too_old");
+  assert.ok(
+    body.error.message.endsWith(` ${describeRecoveryHint(reason)}`),
+    body.error.message,
+  );
+}
+
+describe("hints on unrecovered claude_code_version_too_old rejections", () => {
+  test("tells an override user to raise or unset the override", async () => {
+    withVersionOverride("2.1.260");
+    const base = createCapturingFetch([
+      claudeCodeVersionTooOldResponse(REQUIRED),
+    ]);
+    const sync = createBillingVersionSync(
+      createLearnedClaudeCodeFloor(),
+      base.fetch,
+    );
+    sync.recordRequest(shapedPayload());
+
+    const response = await sync.fetch(
+      MESSAGES_URL,
+      requestInit(undefined, JSON.stringify(shapedPayload("2.1.260"))),
+    );
+
+    await assertHinted(response, {
+      kind: "override",
+      overrideVersion: "2.1.260",
+      requiredVersion: REQUIRED,
+    });
+  });
+
+  test("blames Pi when the billing header already met the floor", async () => {
+    const base = createCapturingFetch([
+      claudeCodeVersionTooOldResponse("2.1.200"),
+    ]);
+    const sync = createBillingVersionSync(
+      createLearnedClaudeCodeFloor(),
+      base.fetch,
+    );
+    sync.recordRequest(shapedPayload());
+
+    const response = await sync.fetch(MESSAGES_URL, requestInit(undefined));
+
+    await assertHinted(response, {
+      kind: "upgrade-pi",
+      sentVersion: CLAUDE_CODE_VERSION,
+    });
+  });
+
+  test("points at the override when the floor is not named", async () => {
+    const base = createCapturingFetch([
+      claudeCodeVersionTooOldResponse(undefined),
+    ]);
+    const sync = createBillingVersionSync(
+      createLearnedClaudeCodeFloor(),
+      base.fetch,
+    );
+    sync.recordRequest(shapedPayload());
+
+    const response = await sync.fetch(MESSAGES_URL, requestInit(undefined));
+
+    await assertHinted(response, {
+      kind: "set-override",
+      requiredVersion: undefined,
+    });
+  });
+
+  test("points at the override when the body cannot be rebuilt", async () => {
+    const base = createCapturingFetch([
+      claudeCodeVersionTooOldResponse(REQUIRED),
+    ]);
+    const sync = createBillingVersionSync(
+      createLearnedClaudeCodeFloor(),
+      base.fetch,
+    );
+
+    const response = await sync.fetch(MESSAGES_URL, requestInit(undefined));
+
+    await assertHinted(response, {
+      kind: "set-override",
+      requiredVersion: REQUIRED,
+    });
+  });
+
+  test("hints the retry's rejection when the retry is rejected too", async () => {
+    const base = createCapturingFetch([
+      claudeCodeVersionTooOldResponse(REQUIRED),
+      claudeCodeVersionTooOldResponse("2.9.5", REQUIRED),
+    ]);
+    const sync = createBillingVersionSync(
+      createLearnedClaudeCodeFloor(),
+      base.fetch,
+    );
+    sync.recordRequest(shapedPayload());
+
+    const response = await sync.fetch(MESSAGES_URL, requestInit(undefined));
+
+    await assertHinted(response, {
+      kind: "set-override",
+      requiredVersion: "2.9.5",
+    });
+  });
+
+  test("blames Pi when the retry at the named floor is rejected at that floor", async () => {
+    const base = createCapturingFetch([
+      claudeCodeVersionTooOldResponse(REQUIRED),
+      claudeCodeVersionTooOldResponse(REQUIRED, REQUIRED),
+    ]);
+    const sync = createBillingVersionSync(
+      createLearnedClaudeCodeFloor(),
+      base.fetch,
+    );
+    sync.recordRequest(shapedPayload());
+
+    const response = await sync.fetch(MESSAGES_URL, requestInit(undefined));
+
+    await assertHinted(response, {
+      kind: "upgrade-pi",
+      sentVersion: REQUIRED,
+    });
   });
 });
