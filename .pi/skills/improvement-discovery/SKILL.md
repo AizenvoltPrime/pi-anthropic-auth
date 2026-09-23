@@ -1,10 +1,8 @@
 ---
 name: improvement-discovery
 description: |
-  Heuristics and process for discovering structural improvements in this package.
-  Load when planning a new improvement round — contains the smell taxonomy,
-  analysis workflow, and prioritization framework distilled from many phases of
-  refactoring.
+  Load before planning an improvement round or editing the `docs/architecture.md` roadmap:
+  smell taxonomy, analysis workflow, prioritization, and the `Release:` tag convention.
 ---
 
 # Improvement Discovery
@@ -15,7 +13,7 @@ It codifies the patterns, smell categories, and analysis workflow that have prov
 ## Analysis workflow
 
 Follow this order — each step builds context for the next.
-Lead with the cause hypothesis, not the tool: fallow finds symptoms by construction (it is syntactic), so running it first frames the whole analysis around symptoms.
+Lead with the cause hypothesis, not the tool: fallow measures structure rather than intent, so it finds symptoms by construction and running it first frames the whole analysis around them.
 
 ### 1. Read the architecture document and form a cause hypothesis
 
@@ -31,6 +29,8 @@ When no such section exists, writing one — naming the organizing concept and r
 
 Run `gh issue list --state open` and cross-check it against the architecture doc's claims about which issues remain open — doc/tracker drift otherwise causes re-planning filed work or missing a parked candidate.
 An open issue that already names a cause-level finding is a pre-discovered candidate — adopt it as a phase step under its existing number rather than re-deriving it.
+Sweep recorded deferred tidyings too: `grep -r -A 5 '#### Deferred tidyings' docs/retro/`.
+Each is a finding a `tidy-first-assessor` judged real but out of scope for the change it was dispatched over — triage it like any other candidate, or say why it stays deferred.
 Track repeat deferrals: an issue swept as out-of-scope across multiple consecutive phases gets an explicit decision this phase — schedule it into the phase, or recommend closing it as not-planned — never a silent re-defer.
 Structural phases must not starve feature and bug work indefinitely.
 
@@ -47,6 +47,8 @@ pnpm fallow dupes 2>&1 || true
 ```
 
 Capture: health score, dead exports, production duplication (`fallow dupes` excludes test files by default), hotspots, refactoring targets.
+
+For untested-but-reachable files and exports, add `pnpm fallow health --coverage-gaps 2>&1 || true` (a reachability lead: discount barrel re-exports; the `fallow` skill carries the caveats).
 
 Fallow is blind to repeated discriminators — scattered one-line conditionals never form a token-run clone — so sweep for them alongside it:
 
@@ -86,7 +88,7 @@ Nine steps is a ceiling, not a target — a phase may have one step, or none.
 If discovery surfaced no cause-level finding (Category A–C) and the candidates are polish-only (Category B unit-size, D, E, G symptoms), do not manufacture a full phase — but split the "polish" verdict before defaulting to defer:
 
 - **Scattered trivia** (isolated findings across cold, low-churn files) → **defer**.
-  A phase step is an _area_, not a scattered list; a rename here and a split there is boy-scout-rule work for the implementation prompts (`/tdd-plan`, `/build-plan` via the `tidy-first` skill), not a planned phase.
+  A phase step is an _area_, not a scattered list; a rename here and a split there is boy-scout-rule work for `/plan-issue`'s Tidy-First assessment (via the `tidy-first` skill), not a planned phase.
 - **Concentrated quality/test debt in a hot area** (3+ findings clustered in one churn hotspot or one oversized test file) → a legitimate **craftsmanship lean phase**, whose spine is "pay down concentrated debt in `<area>`."
   This is Beck/Metz craftsmanship, not filler: a hot file whose test-design or naming debt taxes every change earns a focused phase the same way a coupling flaw does.
   Present it as a first-class `ask_user` option alongside defer.
@@ -254,7 +256,7 @@ These are failure modes and corrections discovered empirically.
 
 - **Don't plan a single step that rewrites an entire large test file** — use lift-and-shift (introduce new alongside old, migrate incrementally, remove old last).
 - **Start from index.ts outward** — the composition root reveals wiring overhead, coupling, and initialization hazards that file-by-file analysis misses.
-- **Test setup is a production-design signal** — `fallow`'s syntactic metrics miss god objects, closure density, and DIP violations.
+- **Test setup is a production-design signal**, and fallow's structural metrics miss the god objects, closure density, and DIP violations it reveals.
   When a unit needs module-level `vi.mock`, wide `as unknown as` casts, or a multi-field fixture, the production object is hard to construct — fix the object, not the test.
   The test is the symptom; the production object is the disease.
 - **Testability friction is a boundary probe.**
