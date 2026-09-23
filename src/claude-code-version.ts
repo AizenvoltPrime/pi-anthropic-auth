@@ -132,3 +132,33 @@ export function higherVersion(
 
   return baseline;
 }
+
+/**
+ * The highest Claude Code version Anthropic has demanded this process.
+ *
+ * `src/billing-version-sync.ts` teaches it the floor named in a
+ * `claude_code_version_too_old` rejection, and applies it to every later
+ * request, so only the first request after a floor rise pays the rejected
+ * round trip.  One floor serves every model: a floor Anthropic names is a
+ * released Claude Code version, which real Claude Code sends to every model.
+ */
+export interface LearnedClaudeCodeFloor {
+  /** Raises the floor; a lower, equal, or unparseable version is ignored. */
+  learn(version: string): void;
+  /** Returns `version` raised to the learned floor, if one has been learned. */
+  applyTo(version: string): string;
+}
+
+export function createLearnedClaudeCodeFloor(): LearnedClaudeCodeFloor {
+  let learned: string | undefined;
+
+  return {
+    learn(version) {
+      if (!CLAUDE_CODE_VERSION_PATTERN.test(version)) return;
+      learned = learned ? higherVersion(learned, version) : version;
+    },
+    applyTo(version) {
+      return higherVersion(version, learned);
+    },
+  };
+}

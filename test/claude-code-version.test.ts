@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, test } from "vitest";
 
-import { higherVersion, readClaudeCliVersion } from "#src/claude-code-version";
+import {
+  createLearnedClaudeCodeFloor,
+  higherVersion,
+  readClaudeCliVersion,
+} from "#src/claude-code-version";
 
 describe("readClaudeCliVersion", () => {
   test("reads the version out of Pi's claude-cli user-agent", () => {
@@ -66,5 +70,50 @@ describe("higherVersion", () => {
     assert.equal(higherVersion("2.1.280", "2.1"), "2.1.280");
     assert.equal(higherVersion("2.1.280", "latest"), "2.1.280");
     assert.equal(higherVersion("2.1.280", "v2.1.999"), "2.1.280");
+  });
+});
+
+describe("createLearnedClaudeCodeFloor", () => {
+  test("leaves a version unchanged before anything is learned", () => {
+    const floor = createLearnedClaudeCodeFloor();
+
+    assert.equal(floor.applyTo("2.1.280"), "2.1.280");
+  });
+
+  test("raises a lower version to the learned floor", () => {
+    const floor = createLearnedClaudeCodeFloor();
+    floor.learn("2.1.300");
+
+    assert.equal(floor.applyTo("2.1.280"), "2.1.300");
+  });
+
+  test("leaves a version above the learned floor unchanged", () => {
+    const floor = createLearnedClaudeCodeFloor();
+    floor.learn("2.1.300");
+
+    assert.equal(floor.applyTo("2.2.0"), "2.2.0");
+  });
+
+  test("never lowers the floor", () => {
+    const floor = createLearnedClaudeCodeFloor();
+    floor.learn("2.1.300");
+    floor.learn("2.1.250");
+
+    assert.equal(floor.applyTo("1.0.0"), "2.1.300");
+  });
+
+  test("ignores an unparseable version", () => {
+    const floor = createLearnedClaudeCodeFloor();
+    floor.learn("2.1.300");
+    floor.learn("latest");
+
+    assert.equal(floor.applyTo("1.0.0"), "2.1.300");
+  });
+
+  test("ignores an unparseable version before anything is learned", () => {
+    const floor = createLearnedClaudeCodeFloor();
+    floor.learn("latest");
+
+    assert.equal(floor.applyTo("1.0.0"), "1.0.0");
   });
 });
