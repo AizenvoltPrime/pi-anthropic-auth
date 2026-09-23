@@ -10,15 +10,28 @@
 # is not a released change. Under release-please they were not excluded at all,
 # which is why v2.0.5 and v2.0.6 shipped no code.
 #
-# `.pi/` is excluded on the same rule. The tracked content there — skills,
-# prompts, and agents — is this repository's own workflow toolkit: absent from
-# package.json `files`, so a `.pi`-only bump would publish a byte-identical
-# tarball, and invisible to users either way.
-# `pi-packages` carries no equivalent entry because it tracks nothing under
-# `packages/*/.pi/`; the divergence is a layout difference, not a policy one.
+# Tracked content absent from package.json `files` is excluded on the same rule:
+# a bump for it would publish a byte-identical tarball. Three groups fall under
+# it (Refs #78):
 #
-# `docs/` itself stays included — architecture.md, comparison-to-similar-projects.md,
-# and the two builtin-transport-seam-*.md files are shipped reference docs.
+# - `.pi/`: skills, prompts, and agents — this repository's own workflow toolkit.
+# - `AGENTS.md`: contributor and agent guidance, not package content.
+# - The top-level tooling config: formatter, linter, type-check, hook, lockfile,
+#   workspace, and release (`cliff.toml`) settings.
+#
+# A new top-level tooling file belongs on this list too. If package.json `files`
+# ever grows to ship one of these paths, remove it here, or its changes stop
+# releasing. package.json itself stays in scope: it is always shipped.
+#
+# `pi-packages` carries no equivalent entries because its `cliff_args` scopes each
+# package with `--include-path "packages/<pkg>/**"`, which already leaves root
+# files out, and it tracks nothing under `packages/*/.pi/`; the divergence is a
+# layout difference, not a policy one.
+#
+# `docs/` itself stays included, deliberately. architecture.md,
+# comparison-to-similar-projects.md, and the two builtin-transport-seam-*.md
+# files are not in the tarball either, but they are user-facing reference docs
+# reached through README.md links, so their changes are kept in the changelog.
 #
 # CHANGELOG.md is excluded so a changelog-writing commit never re-enters the
 # next changelog.
@@ -32,6 +45,18 @@ CLIFF_EXCLUDED_PATHS=(
   "docs/plans/**"
   "docs/retro/**"
   ".pi/**"
+  "AGENTS.md"
+  ".editorconfig"
+  ".fallowrc.json"
+  ".gitignore"
+  ".rumdl.toml"
+  "biome.json"
+  "cliff.toml"
+  "eslint.config.js"
+  "pnpm-lock.yaml"
+  "pnpm-workspace.yaml"
+  "prek.toml"
+  "tsconfig.json"
 )
 
 # Populate the global array CLIFF_ARGS with the scoping flags for git-cliff.
