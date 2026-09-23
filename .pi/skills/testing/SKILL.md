@@ -1,8 +1,8 @@
 ---
 name: testing
 description: |
-  Vitest mock patterns (vi.mock, vi.hoisted, vi.fn reset), TDD planning rules,
-  and general test strategy. Load when writing or debugging tests.
+  Load before writing or debugging a Vitest test, or sequencing TDD steps in a plan:
+  mock patterns (`vi.mock`, `vi.hoisted`, `vi.fn` reset) and test strategy.
 ---
 
 # Testing
@@ -38,7 +38,8 @@ Load this skill when writing, debugging, or planning tests.
 - When a test factory returns an object satisfying a production interface (e.g., `RunnerIO`, `AssemblerIO`), do not annotate the return type with that interface — the annotation erases `Mock<...>` methods (`mockResolvedValue`, `mock.calls`, etc.) from the inferred type.
   Leave the return type unannotated so callers retain full mock access.
 - When a shared test factory's return value must structurally satisfy a production interface (e.g., passed to `createSubagentSession(params, deps)`), add typed implementations to every `vi.fn()` stub — `vi.fn((_param: Type): ReturnType => default)`, not `vi.fn().mockReturnValue(default)`.
-  Bare `vi.fn()` and chained `.mockReturnValue()` produce `Mock<Procedure>` which is not assignable to specific function signatures.
+  Bare `vi.fn()` and chained `.mockReturnValue()`/`.mockResolvedValue()` produce `Mock<Procedure>`, which is not assignable to specific function signatures.
+  Where it *is* assignable, the literal is checked against `any` instead — a required field then goes missing silently until a test reads it.
 - When a test factory accepts overrides via `Partial<ProductionInterface>`, the spread `{ ...defaults, ...overrides }` creates a union type that also erases mock methods.
   Either remove the `Partial<ProductionInterface>` annotation (let TypeScript infer from the spread) or drop the overrides parameter and configure mocks on the returned object directly.
 - When a test factory uses `??` to supply defaults from an overrides object, explicit `undefined` values are swallowed.
@@ -50,15 +51,39 @@ Load this skill when writing, debugging, or planning tests.
 
 - When testing code that uses `setInterval`, never use `vi.runAllTimersAsync()` — it loops infinitely.
   Use `vi.advanceTimersByTimeAsync(ms)` with a specific duration instead.
+- To observe not-yet-settled state, assert promise identity or gate with `Promise.withResolvers` — a `setTimeout(…, 0)` tick-count sleep silently false-greens when the code under test settles in the same tick.
 - Prefer reading `process.env` inside functions rather than capturing it as a module-level constant — `vi.stubEnv()` alone cannot change a constant already evaluated at import time.
   If a module-level constant is unavoidable, test it with `vi.resetModules()` + `await import(...)` inside the test body, and call `vi.unstubAllEnvs()` + `vi.resetModules()` in `afterEach`.
-- To observe not-yet-settled state, assert promise identity or gate with `Promise.withResolvers` — a `setTimeout(…, 0)` tick-count sleep silently false-greens when the code under test settles in the same tick.
 
 ## Test assertions
 
 - Prefer strong assertions that match the **entire** expected value (`toBe`, `toEqual`) over subset matchers (`toContain`, `toMatchObject`, `expect.objectContaining`).
   Weak assertions hide unexpected values and make tests less useful as documentation.
   When a weak assertion is necessary (third-party output, non-deterministic ordering), add a comment explaining why.
+- When a test drives the code through a validation/parse step and the invalid-input fallback returns the same value a negative-path test asserts (e.g. a forwarded-response fixture missing a required field and a `denied` expectation both yield `{ approved: false, state: "denied" }`), a broken fixture false-greens the negative test.
+  Assert the positive (non-fallback) path against the same fixture builder first — a malformed fixture then fails loudly there — or assert a discriminating field the fallback cannot produce.
+- `toMatchObject` does not assert a key's **absence**: an expected `undefined` value requires the key to be present on the received object, so `toMatchObject({ flag: undefined })` fails when `flag` is missing.
+  Use `toEqual` for a full-shape assertion, or assert a discriminating field the negative case cannot produce.
+- When proving a guard test is not vacuous, build the probe to match the guard's exact predicate.
+  A near-miss probe (`void runRpcSession;` against a guard matching `runRpcSession(`) leaves the guard silent and looks like proof it is broken.
+- Before asserting, name both outcomes and confirm your assertion's value differs between them **under the fixture's defaults**.
+  A signal can be legitimate and still fail to discriminate: in pi-subagents, asserting `status === "running"` to prove foreground resolution passes for a background agent too, because the default concurrency limit admits it immediately.
+  Pick a signal only one branch can produce — there, the observer callback that fires for background agents alone.
+- A new test that passes during the Red step is either an invariant pin or a broken probe — decide which before moving to Green.
+  The broken case is a probe string that also appears elsewhere in the output: `toContain("x")` matched the unrelated fixture path `secret.txt` and passed pre-fix.
+  Prove a pin by mutation: change each value the assertion reads, one at a time, and confirm a distinct failure message.
+  Use one probe per assertion *clause*, not per input — five probes against `indexOf` left an adjacent `startsWith` clause unexercised (Refs #52).
+- A mutation is scoped to one claim, so it kills one equivalence class and no more — "I mutated and saw reds" is not evidence the whole set is sound.
+- When the code under test accepts two shapes of the same input (an ordinal or an issue number, a string or an array), check that the fixtures do not all pick one shape.
+  The live input can exercise the other arm exclusively.
+- A bulk red caused by a signature change masks per-test probe quality.
+  Twenty-one tests failing because a required field does not exist yet says nothing about whether any individual assertion discriminates; that is not the per-test red the rule above asks for.
+- A test authored or rewritten **after** Green never had a Red step, so the rule above never triggers for it.
+  Mutate it explicitly before committing.
+- When a fix replaces an ambient global read (`node:path`'s `sep`, `process.platform`, `Date.now`) with an injected value, pick a red-probe input where the ambient and injected values **differ on the CI host**.
+  A `win32PathFlavor` probe on `/tmp/logs/` passes pre-fix on POSIX CI — the host `sep` is `/` too; a native `c:\dir\file.ts` collapses to `./*` and goes red.
+- An equivalence test (incremental vs. freshly built, cached vs. uncached) pins self-consistency, not correctness, when both sides run the code under test.
+  Assert independently — a count, a golden row — anything the equivalence cannot see.
 - Prefer a concrete test asserting current (even imperfect) behavior over `test.todo`.
   A real assertion documents the limitation and lets a future fix flip the expectation.
 - When a test reveals a pre-existing bug rather than a wrong assumption, use `test.fails` to document the expected behavior and file a GitHub issue.
@@ -66,22 +91,20 @@ Load this skill when writing, debugging, or planning tests.
 - When a non-`async` method declared `Promise<T>` must signal a precondition failure, `return Promise.reject(new Error(...))`, not `throw` — a synchronous `throw` escapes `expect(...).rejects.toThrow(...)`, and switching to `async` to fix that trips `@typescript-eslint/require-await` when the body has no `await`.
 - Assert mock calls with `expect(fn).toHaveBeenCalledWith(...)`, not `fn.mock.calls[0]![0]`.
   A typed `vi.fn<(a: string) => void>()` makes the call tuple non-optional, so the `!` trips `@typescript-eslint/no-unnecessary-type-assertion`.
-- When a test drives the code through a validation/parse step and the invalid-input fallback returns the same value a negative-path test asserts (e.g. a forwarded-response fixture missing a required field and a `denied` expectation both yield `{ approved: false, state: "denied" }`), a broken fixture false-greens the negative test.
-  Assert the positive (non-fallback) path against the same fixture builder first — a malformed fixture then fails loudly there — or assert a discriminating field the fallback cannot produce.
-- `toMatchObject` does not assert a key's **absence**: an expected `undefined` value requires the key to be present on the received object, so `toMatchObject({ flag: undefined })` fails when `flag` is missing.
-  Use `toEqual` for a full-shape assertion, or assert a discriminating field the negative case cannot produce.
-- When proving a guard test is not vacuous, build the probe to match the guard's exact predicate.
-  A near-miss probe (`void runRpcSession;` against a guard matching `runRpcSession(`) leaves the guard silent and looks like proof it is broken.
-- A new test that passes during the Red step is either an invariant pin or a broken probe — decide which before moving to Green.
-  The broken case is a probe string that also appears elsewhere in the output: `toContain("x")` matched the unrelated fixture path `secret.txt` and passed pre-fix.
-  Prove a pin by mutation: change each value the assertion reads, one at a time, and confirm a distinct failure message.
-  Use one probe per assertion *clause*, not per input — five probes against `indexOf` left an adjacent `startsWith` clause unexercised (Refs #52).
-- An equivalence test (incremental vs. freshly built, cached vs. uncached) pins self-consistency, not correctness, when both sides run the code under test.
-  Assert independently — a count, a golden row — anything the equivalence cannot see.
 
 ## Test organization
 
 Group tests by the behavior or concern they exercise — open a nested `describe("<concern>", () => { ... })` per concern rather than appending `it` blocks to a flat list.
+Nest by the unit under test and then the scenario; do not repeat a shared prefix across sibling blocks.
+In pi-subagents, twenty sibling `describe("SubagentManager — <concern>")` blocks carry the unit's name as a repeated string fragment, where one `describe("SubagentManager")` holding `describe("spawn")` and `describe("spawnAndWait")` carries it in the structure.
+Nesting is for grouping and organization, not only for a shared `beforeEach`.
+
+The tree is a correctness tool, not cosmetics.
+Choosing a parent forces you to name what each test claims, and a test that will not sit cleanly under any parent usually has a fuzzy claim — which is where a broken probe hides.
+Parallel structure also turns coverage into a grid — once `spawn > type resolution` and `spawnAndWait > type resolution` sit side by side, an asymmetry between them is legible in a way a hole in a flat list never is.
+
+Name a `describe` after the behavior or scenario, never after a historical bug or issue number.
+`describe("SubagentManager — Bug 1 race condition")` references a numbering no later reader can resolve, and the file holding it has no `Bug 2`.
 When adding tests for a new concern (e.g. a `details` field alongside existing content assertions), start a new `describe` block instead of extending the existing one.
 When consolidating duplicated test arrangements, group the shared setup in a describe-scoped `beforeEach` and keep the act (the call under test) explicit in each test.
 Do not wrap the system-under-test call in a helper to eliminate a duplication-metric clone — the repeated act is the test subject, not duplication to remove.
@@ -122,6 +145,10 @@ A missing export throws `is not a function` at runtime but surfaces as `TS2305` 
   A `feat:` step whose red comes up four-fifths green was mistyped at plan time.
 - When a plan rewrites existing tests around a behavior change, label each rewritten case **red** or **invariant pin** in the TDD Order.
   A rewritten fixture whose expected outcome the current code already produces is a pin (Refs #54: four rewritten cases, one red).
+- A killing mutation that deletes a **guard** claims the guard is load-bearing.
+  Name what observably changes without it before writing the mutation — a guard redundant with the runtime (a second `resolve` on a settled promise, a re-entrancy flag nothing re-enters) leaves every test green, and the vacuous mutation then reads as a coverage failure.
+- When a fix changes how a failure is **classified** (user abort vs. real error, retry vs. surface), existing tests asserting the old classification can pass only because of the bug.
+  Rewrite each to exercise the genuine condition, and add a sibling test for the newly distinguished case.
 - When a TDD plan lists separate steps that share a type definition, changing that type in step N breaks steps N+1…N+k.
   Either fold them into one step or introduce the new type alongside the old one and migrate callers incrementally.
 - When a plan adds a parameter that flows through callback chains, the "Module-Level Changes" section must list every file in the chain.
@@ -138,6 +165,8 @@ A missing export throws `is not a function` at runtime but surfaces as `TS2305` 
 - When a TDD step narrows a union type (removes variants), grep all test files for fixtures or mocks that use the removed variant — those test fixes must land in the same step as the type change, not in later steps.
 - When adding a field to a shared interface, grep for ALL test files that construct a compatible mock — not just factory helpers.
 - When estimating the call-site count for a test migration, grep the bare callee (`checkTool(`), not `callee(arg, "literal"` — a single-line pattern misses multi-line invocations where args span continuation lines, undercounting scope.
+  A literal-argument pattern also cannot see a call site relying on a **default parameter** — `function checkPath(…, surface = "path")` carries no literal at all.
+  Grep the helper's signature too.
 - When a TDD step removes a field from a shared interface, grep all `src/` files that reference the removed field — every file that reads or passes the field must update in the same step.
   This is the inverse of the excess-property rule: TypeScript rejects reading a property that no longer exists on the type.
 - When a TDD step removes a field from an event payload or shared interface, grep `test/` for assertion literals naming it too — `toHaveBeenCalledWith({ … })` against an untyped `vi.fn()` or event bus is invisible to `tsc` and fails only at the full-suite run.
