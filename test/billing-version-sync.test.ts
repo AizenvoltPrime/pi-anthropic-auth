@@ -12,18 +12,25 @@ const USER_TEXT = "Summarize the repository status.";
 const PI_AHEAD = "2.9.9";
 const PI_BEHIND = "1.0.0";
 
-const RESPONSE_STUB = { __stub: true } as unknown as Response;
+const RESPONSE_STUB = new Response(null, { status: 200 });
 
 type CapturingFetch = {
   fetch: FetchFunction;
   calls: Array<{ input: unknown; init: RequestInit | undefined }>;
 };
 
-function createCapturingFetch(): CapturingFetch {
+/**
+ * A base fetch that records each call and answers with `responses` in call
+ * order, repeating the last one once the queue is exhausted.
+ */
+function createCapturingFetch(
+  responses: Response[] = [RESPONSE_STUB],
+): CapturingFetch {
   const calls: CapturingFetch["calls"] = [];
   const fetch = ((input: unknown, init?: RequestInit) => {
     calls.push({ input, init });
-    return Promise.resolve(RESPONSE_STUB);
+    const response = responses[Math.min(calls.length, responses.length) - 1];
+    return Promise.resolve(response);
   }) as unknown as FetchFunction;
   return { fetch, calls };
 }
