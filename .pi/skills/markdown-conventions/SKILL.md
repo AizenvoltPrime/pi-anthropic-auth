@@ -23,6 +23,15 @@ Rules below are named by their markdownlint `MDxxx` IDs because `rumdl` implemen
 - `rumdl`'s `MD057` can report an existing relative link as missing when its sentence runs long; split the sentence per the rule above rather than hunting the path.
 - Author and append markdown with the `Write`/`Edit` tools, not shell heredocs (`cat <<EOF`) — heredocs don't interpolate `\uXXXX` escapes and make one-sentence-per-line slips easy, both of which trip the markdown linter.
 
+### Non-ASCII in authored prose
+
+An em-dash in a `newText`/`content` body is unreliably emitted: it can arrive as a literal `\u2014`, as a bare newline that splits the sentence, or as a newline plus `u2014`.
+The result is valid markdown that `rumdl` accepts, so no gate catches it.
+After writing prose, re-read the region and scan it with `rg -n --multiline ' \n [a-z]' <file>` and `rg -n 'u20[0-9a-f]{2}' <file>`.
+Prefer a colon, semicolon, or parentheses when the sentence allows it.
+A rejected `oldText` on a line holding an em-dash is usually a token you emitted wrong, not a file that moved; re-emit the character before changing tactics.
+Only when it genuinely will not emit, write a placeholder and substitute it in a scripted pass (`@PH@`, then `s.replace('@PH@', '\u2014')`) (Refs #74; ported from pi-packages #814, #933, #960).
+
 ### Code fences
 
 - Always specify a language on fenced code blocks (e.g., ` ```typescript `, ` ```bash `, ` ```jsonc `, ` ```text `); use `text` for plain output.

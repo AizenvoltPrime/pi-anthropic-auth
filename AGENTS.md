@@ -320,6 +320,7 @@ chore: bump pi-ai peer dependency to 0.69.0
 2. Keep helper modules small and purpose-specific
 3. Avoid introducing a custom full Anthropic transport unless hook limitations force it
 4. Write non-ASCII characters literally in `Edit` `newText`, never as `\uXXXX` — a bad `oldText` fails loudly, a bad `newText` silently writes the escape into the file
+5. `rg -r` is `--replace`, not `--recursive`; `rg` recurses by default, so drop the `-r` (Refs #47, #66, #74)
 
 ## `ask_user` Tool Usage
 
