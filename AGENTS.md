@@ -5,7 +5,8 @@ Keep it focused on information that multiple agents need: repository purpose, cu
 Do not turn this into a task log.
 
 Project-level reusable workflows belong in `.pi/skills/`, reusable slash-command flows in `.pi/prompts/`, and custom subagents in `.pi/agents/`.
-This repo includes repo-specific skills (Anthropic OAuth debugging, Pi CLI repro, frontmatter) plus a shared workflow toolkit (code design, testing, fallow, improvement discovery, pre-completion, and others) kept in parity with `~/development/pi/pi-packages/`.
+This repo includes repo-specific skills (Anthropic OAuth debugging, Pi CLI repro, frontmatter, upstream watch) plus a shared workflow toolkit (code design, testing, fallow, improvement discovery, pre-completion, shell and edit-tool traps, and others) kept in parity with `~/development/pi/pi-packages/`.
+The Skill Index under Architecture maps each task to the skill to load before it.
 
 ## Project
 
@@ -120,6 +121,7 @@ Repo-specific skills:
 1. `anthropic`: Anthropic OAuth compatibility lessons and debugging workflow
 2. `pi-cli-repro`: repeatable `pi -p ... -e ...` repro workflow
 3. `frontmatter`: Pi skill frontmatter template and rules
+4. `upstream-watch`: load-bearing upstream Pi assumptions and the impact taxonomy for triaging a new Pi release
 
 Shared workflow skills (synced from `pi-packages`, adapted to this single package):
 
@@ -133,6 +135,8 @@ Shared workflow skills (synced from `pi-packages`, adapted to this single packag
 8. `markdown-conventions`: rumdl-enforced markdown rules
 9. `mermaid`: Mermaid authoring and verification
 10. `pi-extension-lifecycle`: Pi turn/tool execution and extension event lifecycle
+11. `shell-traps`: bash traps beyond the zsh facts in Shell (`rg -r`, `pipefail`, backtick bodies, re-verifying counts)
+12. `edit-tool`: atomic `Edit` batches, non-ASCII `oldText`, scripted substitutions, block insertion
 
 ### Project Prompts
 
@@ -146,6 +150,7 @@ Reusable slash-command flows live in `.pi/prompts/` (synced from `pi-packages`, 
 6. `ship-no-issue`: push, verify CI, and dispatch the release (no issue)
 7. `retro`: review a session for workflow improvements and persist retro notes
 8. `retro-note`: persist a quick retro observation to `docs/retro/`
+9. `upstream-impact`: assess a new Pi/pi-ai release against the `upstream-watch` assumptions
 
 The fallow-discovery prompts (`plan-improvements`, `finish-phase`) and the worktree flows (`land-worktree`, `ship-worktree`, `triage-backlog`) from `pi-packages` are intentionally not ported.
 
@@ -159,6 +164,33 @@ Custom subagents live in `.pi/agents/`:
 The `craftsmanship-scout` agent from `pi-packages` is intentionally not ported — its only consumer is the unported `/plan-improvements` prompt.
 
 The `ship-*` and CI/issue steps in the prompts use the `@gotgenes/pi-github-tools` extension, declared in `.pi/settings.json`.
+
+### Skill Index
+
+Before you do the thing in the left column, load the skill in the right one.
+
+| Before you… | Load |
+| --- | --- |
+| touch OAuth shaping in `src/`, or debug an Anthropic OAuth failure | `anthropic` |
+| run a live `pi -p … -e …` repro | `pi-cli-repro` |
+| assess a new Pi/pi-ai release, or change code that depends on upstream internals | `upstream-watch` |
+| create or edit a skill's frontmatter | `frontmatter` |
+| write, refactor, or review TypeScript, or design around a Pi SDK internal | `code-design` |
+| add a parameter to a shared interface or rewire layers | `design-review` |
+| write or debug a test, or sequence TDD steps | `testing` |
+| write or edit markdown, a plan, or a retro | `markdown-conventions` |
+| author or review a Mermaid diagram | `mermaid` |
+| explore unfamiliar code | `colgrep` |
+| compose a bash call with a pipeline, loop, heredoc, in-place edit, or `gh … --body` | `shell-traps` |
+| run a multi-entry `Edit`, a scripted substitution, or a block insertion | `edit-tool` |
+| run or read `fallow` | `fallow` |
+| plan an improvement round or edit the roadmap | `improvement-discovery` |
+| decide when an extension flushes, notifies, or intercepts | `pi-extension-lifecycle` |
+| settle a design in `/plan-issue`, before writing the plan | `tidy-first` |
+| finish `/tdd-plan` or `/build-plan` | `pre-completion` |
+| write GitHub-facing text | `github-voice` |
+
+`colgrep` and `github-voice` are user-installed (the `pi-colgrep` package and a global skill), not tracked in `.pi/skills/`.
 
 ### Upstream Dependencies
 
