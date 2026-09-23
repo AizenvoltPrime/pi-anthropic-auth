@@ -23,3 +23,19 @@ Every claim in the plan was measured against git-cliff over real history before 
 - Planning-time trap: a zsh `for ((i=1; …))` loop over an array silently shifted every tag pair by one (zsh arrays are 1-indexed); rerunning under `bash -c` fixed it.
 - A standing drift guard (top-level file neither shipped nor excluded) was left as an Open Question and not filed.
 - Tidy-First skipped: no `src/`/`test/` files touched.
+
+## Stage: Implementation — Build (2026-09-23T04:48:55Z)
+
+### Session summary
+
+Both plan steps landed as planned: `15f1f11` added twelve entries to `CLIFF_EXCLUDED_PATHS` and reworked the `lib.sh` comment (including the corrected `docs/` "shipped" claim), and `5180fa9` repointed the `AGENTS.md` Releases sentence and `ship-issue.md` step 4b at the array.
+Every measured prediction reproduced: `v3.2.0..v3.2.1` renders 0 entries, the per-commit table matches, zsh sourcing yields 16 `--exclude-path` flags, and `next-version.sh` still prints `v3.2.2`.
+
+### Observations
+
+- No deviations from the plan.
+- `shellcheck scripts/release/*.sh` reports a pre-existing SC2129 style note in `prepare-release.sh` (identical on the base); `lib.sh` alone is clean, and shellcheck is not part of `pnpm run lint`.
+- Whole-history entry count is 101 after step 1, not the plan's 100: the plan measured before the `fix(release):` commit existed, and that commit is itself in scope, as the plan predicted.
+- Step 2's commit is excluded by step 1's own rule (0 entries for `HEAD^..HEAD`).
+- Pre-completion reviewer: WARN.
+  Reviewer warnings: the standing drift guard in Open Questions has no issue number; this is the deliberate, unfiled deferral recorded at planning.
