@@ -1,12 +1,8 @@
 ---
 name: pi-extension-lifecycle
-description: >-
-  Reference for the Pi coding agent's turn/tool execution model and extension
-  event lifecycle. Use when designing extension timing (when to flush, notify,
-  or intercept), understanding event sequencing, or reasoning about what the
-  agent sees between turns. Includes the verified lifecycle diagram, event
-  handler capabilities, message delivery mechanics, and empirical session-data
-  patterns.
+description: |
+  Load before deciding when an extension should flush, notify, or intercept, or reasoning about
+  event order and what the agent sees between turns: the verified Pi turn/tool lifecycle.
 ---
 
 # Pi Extension Lifecycle Reference

@@ -1,9 +1,8 @@
 ---
 name: mermaid
 description: |
-  Authoring and reviewing Mermaid diagrams — pitfall categories (semicolons, angle-bracket tokens, quoted headings),
-  renderer verification, and state-machine disambiguation with note blocks.
-  Load when authoring or reviewing Mermaid diagrams in any doc type.
+  Load before authoring or reviewing a Mermaid diagram: pitfall categories, renderer verification,
+  and state-machine disambiguation.
 ---
 
 # Mermaid

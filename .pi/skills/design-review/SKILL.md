@@ -1,9 +1,8 @@
 ---
 name: design-review
 description: |
-  Review a module's dependency and structural patterns for code smells.
-  Use when adding a parameter to a shared interface, when a dependency bag grows past 5 fields,
-  or when planning a refactoring that touches wiring between layers.
+  Load before adding a parameter to a shared interface, growing a dependency bag past five fields,
+  or planning a refactor that rewires layers: the dependency and encapsulation smell checklist.
 metadata:
   short-description: Structural design review for dependency and encapsulation smells
 ---
