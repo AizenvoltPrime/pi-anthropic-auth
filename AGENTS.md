@@ -50,6 +50,7 @@ The wrapper delegates to Pi's own built-in Anthropic `streamSimple` transport an
 
 Prefer the smallest integration point that works.
 If Pi already supports a behavior upstream, reuse it instead of copying it locally.
+Thinness governs request shaping, not user-facing diagnostics: when a failure is ours to explain, prefer an actionable message over the raw upstream error (Refs #75).
 
 ### Preserve Built-In Behavior By Default
 
