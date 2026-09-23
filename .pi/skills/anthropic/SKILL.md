@@ -40,6 +40,9 @@ compatibility: Intended for the pi-anthropic-auth repository and Pi Anthropic OA
 - The billing header's `cc_version` is a **floor**, not a fixed value: the wrapper injects an `options.fetch` that reads pi's own `user-agent: claude-cli/<version>` off the built request and rebuilds the header at pi's version when pi reports a higher one (Issue #74).
   An explicit `PI_ANTHROPIC_AUTH_CLAUDE_CODE_VERSION` override is absolute and is never raised.
   Measured live on pi 0.87.1 against `claude-opus-5-5`: with the pin forced to 2.1.260 the request succeeds; with the same value set through the env override it is rejected as `claude_code_version_too_old`.
+- When Anthropic raises a floor above both pi and the pin, the same `fetch` retries once at the floor the 400 names, and remembers it for the wrapper's lifetime (Issue #75).
+  Unrecovered rejections (override set, floor unnamed, body not rebuildable, retry rejected) reach the user with a `[pi-anthropic-auth]` hint appended to `error.message`.
+  On pi 0.87.1 the retry is unreachable live without a patch, because pi's own 2.1.280 already meets every current floor; the live check forces the pin to 2.1.260 and disables the pi-version read in the working tree, then looks for the `claude-code-version-recovery` debug line.
 - The wrapper covers the main loop and compaction — everything that dispatches through `modelRuntime`.
 - On pi >=0.80.8, `agentLoop` background agents and extensions calling pi-ai's `compat.streamSimple` directly are confirmed uncovered, and cannot be covered from this extension (Issue #46); see `docs/architecture.md` for why, and for the `agent.streamFunction` workaround.
 
@@ -130,9 +133,10 @@ All request shaping runs in the transport wrapper (`src/oauth-transport.ts`), wh
 - system prompt de-fingerprinting (section-aware: replaces the untagged preamble, drops the `docs` section, strips the `tools` filler; preserves every other section byte-identically)
 - the same section rules applied to mid-conversation `role: "system"` updates (Issue #69)
 
-One step does not fit in `onPayload` and runs in an injected `options.fetch` instead (`src/billing-version-sync.ts`): raising `cc_version` to pi's reported `claude-cli` version.
+One step does not fit in `onPayload` and runs in an injected `options.fetch` instead (`src/billing-version-sync.ts`): raising `cc_version` to pi's reported `claude-cli` version, and recovering from a `claude_code_version_too_old` rejection.
 Pi's version is added by pi-ai's own `createClient`, downstream of every other seam we can reach, so the built request's headers are the only place to read it.
 The body splice is an exact-string replacement of the header we emitted moments earlier — never a JSON round-trip, which would put a re-serialization downstream of the byte-exact section preservation.
+The recovery reads only a 400, through `response.clone()`, so the streaming success path is never touched.
 
 Gate on the `sk-ant-oat` access-token prefix (`options.apiKey`), the same signal Pi uses internally.
 This covers the main loop and compaction; `agentLoop` background agents are confirmed uncovered on pi >=0.80.8 and are out of reach from here (Issue #46).

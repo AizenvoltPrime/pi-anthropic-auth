@@ -47,7 +47,8 @@ Paths are relative to `~/development/pi/pi`.
 | Pi's default prompt is an untagged preamble plus `<name>` sections matching `PI_OWNED_SECTIONS` and our anchors | `packages/coding-agent/src/core/system-prompt.ts` (`buildSystemPromptSections`), `packages/ai/src/utils/text.ts` (`getSystemMessageText`) | Behavioral-silent |
 | Mid-conversation section updates keep the `Updated/Removed system prompt section "<name>"` framing | `packages/ai/src/utils/text.ts` (`renderSystemMessageUpdate`) | Behavioral-silent |
 | Login and refresh stay delegated to the built-in `anthropicOAuth` | `packages/ai/src/oauth*`, coding-agent auth wiring | Compile-time or runtime throw |
-| `claudeCodeVersion` in pi's user-agent vs. our `cc_version` pin | `packages/ai/src/api/anthropic-messages.ts` (`claudeCodeVersion`) | Hard failure (`claude_code_version_too_old`) |
+| `claudeCodeVersion` in pi's user-agent vs. our `cc_version` pin | `packages/ai/src/api/anthropic-messages.ts` (`claudeCodeVersion`) | One rejected round trip, then recovered at the named floor (Issue #75); a hard failure only when the override is set or the floor is unnamed |
+| Anthropic names the floor as `version X.Y.Z or newer is required` in a `claude_code_version_too_old` 400 | Anthropic API (no upstream file); `src/version-rejection.ts` | Behavioral-silent (recovery degrades to a hint) |
 | New auxiliary request paths still reach `ModelRuntime` | any new caller (cache warmer, background agents, extension model APIs) | Coverage-gap (unshaped OAuth request) |
 
 The last row has no fixed path on purpose.

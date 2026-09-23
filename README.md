@@ -112,14 +112,19 @@ This package reports a bundled Claude Code version in the OAuth billing header, 
 The bundled version is a **floor**, not a fixed value: when the Pi you are running reports a newer Claude Code version in its own `user-agent`, this extension adopts it automatically for the billing header.
 So upgrading Pi is usually enough to reach a newly gated model.
 
-When Anthropic raises the floor faster than either Pi or this package ships, override the pin:
+When Anthropic raises the floor faster than either Pi or this package ships, the extension recovers on its own.
+The rejection names the required version, so the extension rebuilds the billing header at that version and retries the request once.
+It remembers that version for the rest of the session, so only the first request after a floor rise pays for the rejected attempt.
+
+If the error still reaches you, it ends with a `[pi-anthropic-auth]` hint saying what to do: raise or unset an override, set one, or upgrade Pi.
+To pin the version yourself:
 
 ```bash
 export PI_ANTHROPIC_AUTH_CLAUDE_CODE_VERSION=2.1.280
 ```
 
 The value must be a bare `X.Y.Z` version; anything else fails fast with an explicit error.
-An override is absolute — taken verbatim, and never raised from Pi's version — so a stale override can itself cause this error.
+An override is absolute: it is taken verbatim, never raised from Pi's version, and turns off automatic recovery, so a stale override can itself cause this error.
 Check the current release with `npm view @anthropic-ai/claude-code dist-tags`.
 
 Do not derive the value from a local `claude --version`.

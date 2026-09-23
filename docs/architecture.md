@@ -101,6 +101,12 @@ The bundled pin is therefore a floor — when pi reports a higher Claude Code ve
 The splice is an exact-string replacement of the header this extension emitted moments earlier, never a JSON round-trip, so the byte-exact section preservation above survives it.
 An explicit `PI_ANTHROPIC_AUTH_CLAUDE_CODE_VERSION` override is absolute and is never raised (Issue #74).
 
+The same `fetch` wrapper recovers when Anthropic raises a model's floor above both pi and the pin (Issue #75).
+It inspects only a 400, through `response.clone()`, so a streaming success response is never read.
+When the body is a `claude_code_version_too_old` rejection naming a higher floor, the wrapper splices the billing header up to that floor and retries once, with the same exact-string replacement as above.
+The floor is learned for the wrapper's lifetime, owned by `createAnthropicOAuthStreamSimple` rather than by module state, so later requests go out at it directly.
+When recovery cannot run (an override is set, the floor is not named, the body cannot be rebuilt) or the retry is rejected too, the 400 is returned with a `[pi-anthropic-auth]` hint appended to `error.message`; status, headers, `error_code`, and `request_id` are preserved.
+
 The wrapper composes, rather than replaces, any caller-provided `onPayload` and any caller-provided `fetch`.
 On the main loop, Pi still passes its own `onPayload` (which fires other extensions' `before_provider_request` handlers); the wrapper runs those first and applies our shaping last, closest to the wire.
 
@@ -214,8 +220,9 @@ Upstream draws the same distinction: `agent-session.ts` branches on `this.agent.
 - `src/request-shaping.ts` — the shaping pipeline applied via `onPayload`.
 - `src/anthropic-message.ts` — loose structural types for the `messages[]` entries that shaping and billing-header construction both read.
 - `src/billing-header.ts` — the `x-anthropic-billing-header` recipe, with the Claude Code version as an explicit parameter so the same header can be rebuilt at a different version.
-- `src/claude-code-version.ts` — the Claude Code version floor, its environment override, `claude-cli` user-agent parsing, and numeric version comparison (Issue #74).
-- `src/billing-version-sync.ts` — the per-request `fetch` wrapper that raises `cc_version` to pi's reported version at the wire (Issue #74).
+- `src/claude-code-version.ts` — the Claude Code version floor, its environment override, `claude-cli` user-agent parsing, and numeric version comparison (Issue #74), plus the floor learned from rejections (Issue #75).
+- `src/billing-version-sync.ts` — the per-request `fetch` wrapper that raises `cc_version` to pi's reported version at the wire (Issue #74), and retries or hints a `claude_code_version_too_old` rejection (Issue #75).
+- `src/version-rejection.ts` — parser for Anthropic's `claude_code_version_too_old` rejection body, and the wording of the hint appended when recovery cannot help (Issue #75).
 - `src/system-prompt-sections.ts` — parser for Pi's XML-sectioned system prompt; splits it into ordered chunks and renders them back byte-exactly, so an unrecognized section is copied rather than re-serialized (Issue #67).
 - `src/system-prompt-shaping.ts` — section-aware sanitizer that replaces Pi's preamble, drops the `docs` section, strips the `tools` filler, and preserves everything else.
 - `src/diagnostics.ts` — `ExtensionDiagnostics` value object, `formatDiagnosticsReport`, and `createStatusCommandHandler`; surfaced by the `/anthropic-auth:status` command registered in `src/index.ts`.
