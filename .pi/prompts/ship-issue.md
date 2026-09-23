@@ -64,7 +64,7 @@ Optionally run `pnpm fallow:dead-code` for dead-code hygiene — it is not a CI 
 ## 4b. Check for a stacked release
 
 Do not predict whether anything will release: `./scripts/release/next-version.sh` applies the real rules offline and prints the tag that would be cut, or nothing.
-Most commit types cut a release here — `cliff.toml` maps `docs` and `chore` to visible changelog sections, so a docs-only range still produces a patch bump (`v2.0.2`, `v2.0.3`) — but plan- and retro-only commits do not, because `docs/plans/**` and `docs/retro/**` are excluded from the release scope.
+Most commit types cut a release here — `cliff.toml` maps `docs` and `chore` to visible changelog sections, so a docs-only range still produces a patch bump (`v2.0.2`, `v2.0.3`) — but commits touching only unshipped paths (plans, retros, `.pi/`, `AGENTS.md`, top-level tooling config) do not, because `CLIFF_EXCLUDED_PATHS` in `scripts/release/lib.sh` excludes them from the release scope.
 
 Apply the decision recorded in the early "Release coordination" section.
 The issue **always** closes in step 5, regardless of this decision (subject to step 5's hypothesis-pending exception) — closing records that the work is on `main`; releasing is a separate, batched concern.

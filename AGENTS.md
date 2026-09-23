@@ -289,7 +289,8 @@ Before dispatching, ask what would release — read-only, offline, and instant:
 ```
 
 Do not reason about this from commit types when you can ask.
-Most types cut a release (`cliff.toml` mirrors the visible/hidden split the retired `release-please-config.json` declared, so `docs:` and `chore:` do bump), but commits touching only `docs/plans/**` or `docs/retro/**` do not — those paths are excluded from the release scope, which is why a plan or retro no longer ships a version on its own.
+Most types cut a release (`cliff.toml` mirrors the visible/hidden split the retired `release-please-config.json` declared, so `docs:` and `chore:` do bump), but commits touching only paths absent from the published tarball do not — plans, retros, `.pi/`, `AGENTS.md`, and the top-level tooling config are excluded from the release scope, so none of them ships a version on its own (Refs #78).
+`CLIFF_EXCLUDED_PATHS` in `scripts/release/lib.sh` is the list; the `docs/*.md` reference docs stay in scope deliberately.
 
 Split a script that pushes from the read-only derivation it calls, and refuse the pushing half outside CI: `scripts/release/prepare-release.sh` guards on `CI` (override with `ALLOW_LOCAL_PUSH=1`), while `next-version.sh` only prints.
 
