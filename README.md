@@ -138,13 +138,12 @@ violate Anthropic's Terms of Service restrictions on reverse engineering or dupl
 outputs.
 ```
 
-This is Anthropic's `reasoning_extraction` classifier, and **this extension does not fix it.**
+**Fixed in pi 0.87.1. If you see this, upgrade pi.**
 
-Measured cause: pi's turn-prefix summarization prompt asserts "This is the PREFIX of a turn that was too large to keep" while sending a transcript of only a few hundred characters, mostly model output.
-On `claude-fable-5-1` that combination is refused; it fades out above roughly 3,000 characters of transcript and does not occur on `claude-fable-5`, nor with pi's full compaction prompt.
+This was Anthropic's `reasoning_extraction` classifier responding to pi's turn-prefix summarization prompt, which asserted "This is the PREFIX of a turn that was too large to keep" while sending a transcript of only a few hundred characters, mostly model output.
+On `claude-fable-5-1` that combination was refused.
 
-The fix belongs upstream — tracked at [earendil-works/pi#9652](https://github.com/earendil-works/pi/issues/9652) and [#65](https://github.com/gotgenes/pi-anthropic-auth/issues/65).
-As a workaround, compact on a different model, or avoid the turn-prefix path by compacting before a single turn grows large enough to be split.
+Nothing in this extension caused it or fixed it: the fix is entirely upstream, in [earendil-works/pi#9908](https://github.com/earendil-works/pi/pull/9908).
 
 ### Docker: extension missing after volume mount
 

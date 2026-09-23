@@ -311,3 +311,18 @@ Rejected: an `AGENTS.md` cache-measurement rule (duplicates the `anthropic` skil
 ### Open thread
 
 Issue [#65] is reopened and unfixed. The measured prompt-substitution mitigation is declined as out of scope for this package; the fix belongs in pi, tracked at [pi#9652].
+
+## Stage: Resolved upstream (2026-09-23)
+
+[pi#9908] ("fix(coding-agent): avoid Fable split-turn summary refusals", merged as `d192bd6`, shipped in pi **0.87.1**) rewrites `TURN_PREFIX_SUMMARIZATION_PROMPT` and replaces the `<conversation>` envelope with separated `# Conversation` / `# Instructions` sections.
+It removes exactly the framing this investigation identified as the trigger — the assertion that a large turn was truncated, and the instruction to reconstruct the retained suffix.
+Issue [#65] is closed as resolved upstream; nothing shipped from this repository for it.
+
+Notes worth keeping:
+
+- **The declined mitigation was the right call.** Substituting pi's full compaction prompt would have worked, and would now be dead code fighting an upstream prompt that no longer needs correcting. Declining on scope rather than on efficacy is what made that outcome automatic instead of lucky.
+- **The correction is what produced the fix.** The maintainer's last comment before merging said he was waiting on Anthropic's feedback; he shipped a client-side prompt change anyway. The thread that got there had two independent reproductions converging — @pandysp's session replay and this repo's API-level factorial — and neither alone had been enough to move it.
+- **@pandysp diagnosed it correctly and was under-weighted twice.** They stated in both trackers that their failing request contained no thinking text, and explicitly declined to treat it as confirmation of the thinking hypothesis. The close comment credits them.
+- `README.md` keeps a trimmed troubleshooting entry pointing at the 0.87.1 upgrade rather than deleting it outright, since users on older pi can still hit the refusal.
+
+[pi#9908]: https://github.com/earendil-works/pi/pull/9908
