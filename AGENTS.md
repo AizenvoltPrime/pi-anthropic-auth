@@ -204,6 +204,16 @@ See `docs/architecture.md` for the full record and the `agent.streamFunction` wo
 
 Use `pnpm`.
 
+### Shell
+
+The `bash` tool runs zsh.
+Quote a glob pattern meant for a command rather than the shell — `--include='*.ts'`, `find . -name '*.ts'`.
+Unquoted, it expands against the cwd first: bash silently substitutes a matched filename, and zsh aborts with `no matches found`.
+In zsh an unquoted parameter is not word-split, so `perl -pi -e '…' $FILES` passes the whole list as a single filename — spell a multi-file list inline.
+Do not start a bash word with `=` — zsh's `equals` expansion reads `=word` as a command-path lookup, aborts, and discards the rest of an `A; B; C` chain; use `echo ---`, not `echo ===`.
+When a shell loop or script needs a status variable, do not name it `status` — zsh reserves `$status` (an alias for `$?`) as read-only, so the assignment aborts with `read-only variable: status`; use `state`/`rc` instead.
+The remaining shell traps (`rg -r`, pipelines under `pipefail`, backtick bodies) live in the `shell-traps` skill.
+
 ### Git Workflow
 
 Before starting work, sync the branch with the remote using:
@@ -323,7 +333,6 @@ chore: bump pi-ai peer dependency to 0.69.0
 2. Keep helper modules small and purpose-specific
 3. Avoid introducing a custom full Anthropic transport unless hook limitations force it
 4. Write non-ASCII characters literally in `Edit` `newText`, never as `\uXXXX` — a bad `oldText` fails loudly, a bad `newText` silently writes the escape into the file
-5. `rg -r` is `--replace`, not `--recursive`; `rg` recurses by default, so drop the `-r` (Refs #47, #66, #74)
 
 ## `ask_user` Tool Usage
 
