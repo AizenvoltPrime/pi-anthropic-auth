@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.2.0](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.1.0...v3.2.0) (2026-09-23)
+
+
+### Features
+
+* retry claude_code_version_too_old rejections at the required version ([bbb17e4](https://github.com/gotgenes/pi-anthropic-auth/commit/bbb17e4c543740b58586e6343e88d7968f468277))
+* explain unrecoverable claude_code_version_too_old rejections ([b11e371](https://github.com/gotgenes/pi-anthropic-auth/commit/b11e3711f1f0722f4c654efd5c722790295ba58d))
+
+### Documentation
+
+* **retro:** add retro notes for issue #74 ([5f8ae44](https://github.com/gotgenes/pi-anthropic-auth/commit/5f8ae440091769c38569303c0b61ee12266d04b9))
+* record claude_code_version_too_old recovery ([e5a3a19](https://github.com/gotgenes/pi-anthropic-auth/commit/e5a3a194d966c753a75ca362469b59c896ad8eec))
+
 ## [3.1.0](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.0.1...v3.1.0) (2026-09-22)
 
 
