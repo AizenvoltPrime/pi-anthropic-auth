@@ -25,5 +25,7 @@ export type MessageBlock = {
 export type MessageParam = {
   role?: string;
   content?: string | MessageBlock[];
+  /** Per-message effort, on the `role: "system"` entries Pi sends for it. */
+  output_config?: unknown;
   [key: string]: unknown;
 };

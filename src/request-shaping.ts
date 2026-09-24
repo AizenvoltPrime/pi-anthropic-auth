@@ -103,11 +103,10 @@ function prependBillingHeader(
  * sanitizer strips from `system[]` would otherwise reach Anthropic by that
  * second route (Issue #69).
  *
- * A message whose text blocks all shape away is dropped, since Anthropic
- * rejects an empty `content` array.  Non-text blocks — the `tool_addition`
- * and `tool_removal` entries a section update can carry — pass through, and
- * keep their message alive.  So does `output_config`: Pi carries the
- * requested effort for managed-effort models in content-less system messages.
+ * A message whose text blocks all shape away is dropped unless it carries
+ * effort: an update with nothing left to say is noise.  Non-text blocks — the
+ * `tool_addition` and `tool_removal` entries a section update can carry —
+ * pass through, and keep their message alive.
  */
 function shapeSystemRoleMessages(messages: MessageParam[]): MessageParam[] {
   return messages.flatMap((message) => {
@@ -116,10 +115,23 @@ function shapeSystemRoleMessages(messages: MessageParam[]): MessageParam[] {
     }
 
     const content = message.content.flatMap(shapeSystemMessageBlock);
-    return content.length > 0 || message.output_config !== undefined
+    return content.length > 0 || carriesEffort(message)
       ? [{ ...message, content }]
       : [];
   });
+}
+
+/**
+ * Whether a system message carries a per-message effort level.
+ *
+ * On models Pi flags `supportsMidConvoEffort` (Fable 5.1, Opus 5, Opus 5.5),
+ * Pi pins the top-level `output_config.effort` to `"high"` and sends the
+ * requested effort as content-less `role: "system"` messages.  Anthropic
+ * accepts them with an empty `content` array, and dropping them silently runs
+ * every request at `"high"` (PR #79).
+ */
+function carriesEffort(message: MessageParam): boolean {
+  return message.output_config !== undefined;
 }
 
 function shapeSystemMessageBlock(block: MessageBlock): MessageBlock[] {
