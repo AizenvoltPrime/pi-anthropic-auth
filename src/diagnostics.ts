@@ -1,6 +1,7 @@
+import type { ShapedProvider } from "./extra-provider-shaping";
+
 /**
- * Diagnostic information captured at extension load time and surfaced via the
- * `/anthropic-auth:status` command.
+ * Diagnostic information surfaced via the `/anthropic-auth:status` command.
  */
 export interface ExtensionDiagnostics {
   /** Published version read from `package.json` at load time. */
@@ -13,6 +14,13 @@ export interface ExtensionDiagnostics {
    * failure aborts extension load before `registerCommand` runs.
    */
   transportResolved: boolean;
+  /**
+   * Extra providers the config files named, each registered with the shaping
+   * wrapper.  `anthropic` is always shaped and is not listed here.
+   */
+  shapedProviders: readonly ShapedProvider[];
+  /** Problems found reading the config files, one line each. */
+  configWarnings: readonly string[];
 }
 
 /**
@@ -37,12 +45,23 @@ export interface StatusCommandContext {
  */
 export function formatDiagnosticsReport(d: ExtensionDiagnostics): string {
   const transport = d.transportResolved ? "resolved" : "not resolved";
+  const shaped = [
+    "anthropic",
+    ...d.shapedProviders.map(({ name, layer }) => `${name} (${layer})`),
+  ];
   return [
     "pi-anthropic-auth diagnostics",
     `  version: ${d.version}`,
     `  module:  ${d.modulePath}`,
     `  built-in Anthropic transport: ${transport}`,
+    `  shaped providers: ${shaped.join(", ")}`,
+    ...formatConfigWarnings(d.configWarnings),
   ].join("\n");
+}
+
+function formatConfigWarnings(warnings: readonly string[]): string[] {
+  if (warnings.length === 0) return [];
+  return ["  config warnings:", ...warnings.map((warning) => `    ${warning}`)];
 }
 
 /**

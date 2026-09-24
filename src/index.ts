@@ -65,6 +65,8 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     version: pkg.default.version,
     modulePath: fileURLToPath(import.meta.url),
     transportResolved: true,
+    shapedProviders: [],
+    configWarnings: [],
   };
 
   // One wrapper instance owns the learned Claude Code floor (Issue #75), so

@@ -12,6 +12,8 @@ const SAMPLE: ExtensionDiagnostics = {
   modulePath:
     "/root/.pi/agent/node_modules/@gotgenes/pi-anthropic-auth/src/index.ts",
   transportResolved: true,
+  shapedProviders: [],
+  configWarnings: [],
 };
 
 describe("createStatusCommandHandler", () => {
@@ -88,6 +90,45 @@ describe("formatDiagnosticsReport", () => {
   test("includes a transport-resolved marker when resolved", () => {
     const report = formatDiagnosticsReport(SAMPLE);
     assert.match(report, /resolved/i);
+  });
+
+  describe("shaped providers", () => {
+    test("lists only anthropic when the config names no extra providers", () => {
+      const report = formatDiagnosticsReport(SAMPLE);
+      assert.match(report, /^ {2}shaped providers: anthropic$/m);
+    });
+
+    test("lists each extra provider after anthropic, with the layer that named it", () => {
+      const report = formatDiagnosticsReport({
+        ...SAMPLE,
+        shapedProviders: [
+          { name: "anthropic-2", layer: "global" },
+          { name: "anthropic-3", layer: "project" },
+        ],
+      });
+      assert.match(
+        report,
+        /^ {2}shaped providers: anthropic, anthropic-2 \(global\), anthropic-3 \(project\)$/m,
+      );
+    });
+  });
+
+  describe("config warnings", () => {
+    test("omits the warnings block when there are none", () => {
+      const report = formatDiagnosticsReport(SAMPLE);
+      assert.doesNotMatch(report, /config warnings/);
+    });
+
+    test("lists each warning, indented, under a config warnings heading", () => {
+      const report = formatDiagnosticsReport({
+        ...SAMPLE,
+        configWarnings: ["a.json: first", "b.json: second"],
+      });
+      assert.match(
+        report,
+        /\n {2}config warnings:\n {4}a\.json: first\n {4}b\.json: second$/,
+      );
+    });
   });
 
   test("reports transport as unresolved when false", () => {
