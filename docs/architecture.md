@@ -18,13 +18,15 @@ That hook is threaded into the interactive agent loop's `streamFn` only.
 Auxiliary Anthropic OAuth calls bypass it:
 
 - Pi's built-in compaction/summarization issues `completeSimple` without an `onPayload`.
-- Third-party background agents (for example pi-observational-memory's observer, reflector, and dropper) run via `agentLoop`, which defaults to pi-ai's bare `streamSimple`.
+- Third-party background agents (for example pi-observational-memory's observer, reflector, and dropper) ran via `agentLoop`, which then defaulted to pi-ai's bare `streamSimple`.
 
 Those requests reached Anthropic carrying an OAuth token but no Claude Code billing header.
 Anthropic then classified them as third-party app usage and returned the misleading `You're out of extra usage.` HTTP 400 reported in Issue #18 with `pi-fork` and `pi-observational-memory`.
 
 The transport wrapper closed the compaction half of that gap and, on pi <=0.80.7, the background-agent half as well.
-pi 0.80.8 reopened the background-agent half; see "The remaining gap: pi-ai compat dispatch" below.
+pi 0.80.8 reopened the background-agent half for callers that dispatch through pi-ai's `compat.streamSimple`.
+pi 0.86.0 then gave extensions a supported path that reaches the wrapper, `ctx.modelRegistry.streamSimple()`, and pi-observational-memory 3.1.x uses it.
+See "The remaining gap: pi-ai compat dispatch" and "Supported path for extension authors" below.
 
 ## The seam: a `streamSimple` transport wrapper
 
@@ -39,6 +41,7 @@ if (extension?.streamSimple && model.api === extension.api) {
 
 Both the interactive loop and compaction dispatch through `modelRuntime`, so both reach the wrapper.
 `sdk.ts`'s `createAgentSession` supplies `streamFn: (model, context, options) => modelRuntime.streamSimple(...)`, and `agent-session.ts` reuses that same `agent.streamFunction` at both compaction call sites.
+Extension model calls issued through `ctx.modelRegistry.streamSimple()` (pi >=0.86.0) reach it too: `ModelRegistry.streamSimple` delegates to `ModelRuntime.streamSimple`, which dispatches to the composed provider.
 
 Callers that dispatch through pi-ai's own `compat.streamSimple` do not reach the wrapper at all:
 
@@ -46,6 +49,7 @@ Callers that dispatch through pi-ai's own `compat.streamSimple` do not reach the
 flowchart TD
     A["Interactive turn"] --> MR["modelRuntime.streamSimple"]
     B["Compaction (agent.streamFunction)"] --> MR
+    E["Extension model calls (ctx.modelRegistry.streamSimple)"] --> MR
     MR --> PC["provider-composer.streamWith"]
     PC --> W["streamSimple wrapper (this extension)"]
     W --> D{"sk-ant-oat token?"}
@@ -55,7 +59,7 @@ flowchart TD
     P --> G
     G --> AN["Anthropic /v1/messages"]
 
-    C["Background agents (agentLoop default streamFn)"] --> CD["pi-ai compat.streamSimple"]
+    C["Background agents omitting streamFn (legacy fallback)"] --> CD["pi-ai compat.streamSimple"]
     X["Extensions calling compat.streamSimple directly"] --> CD
     CD --> R["pi-ai api registry (built-in anthropic-messages)"]
     R --> G
@@ -169,8 +173,9 @@ Do not reintroduce ordering normalization without a fresh live rejection to poin
 | --- | --- | --- | --- |
 | Interactive turn | agent loop `streamFn`, into `modelRuntime` | yes | yes |
 | Compaction / summarization | `agent.streamFunction`, into `modelRuntime` | no | yes |
-| Background agents | `agentLoop` default `streamFn`, into `compat.streamSimple` | no | no |
-| Direct `compat.streamSimple` callers | a third-party extension | no | no |
+| Extension model calls and background agents using `ctx.modelRegistry.streamSimple()` | a third-party extension (pi >=0.86.0), into `modelRuntime` | no | yes |
+| Explicit `compat.streamSimple` callers | a third-party extension | no | no |
+| Background agents omitting `streamFn` | an untyped or pre-0.81 extension, into the `setDefaultStreamFn` fallback (`compat.streamSimple`) | no | no |
 | Fork children | a separate `pi` process | per-process | for that process's own `modelRuntime` traffic |
 
 ## The remaining gap: pi-ai compat dispatch
@@ -188,6 +193,13 @@ That default resolves the transport from pi-ai's api registry, which still holds
 Up to pi 0.80.7, `ModelRegistry.applyProviderConfig` bridged an extension's `streamSimple` into that registry via `registerApiProvider`, so those calls reached the wrapper too.
 pi 0.80.8 replaced `ModelRegistry` with `ModelRuntime` and dropped the bridge; no file in `pi-coding-agent`'s `dist/` has called `registerApiProvider` since.
 Because this package's peer floor is well above 0.80.8, the bridge is absent on every host version this extension supports.
+
+The fallback is a legacy path rather than a supported seam.
+pi-agent-core 0.81.0 made `streamFn` required in the public types of `Agent` and the loop functions, and 0.81.1 restored the fallback at runtime only, for untyped and pre-0.81 extensions.
+`getDefaultStreamFn` is not exported, only `setDefaultStreamFn`.
+
+So the lane is reached two ways: by extensions that pass `compat.streamSimple` explicitly, and by callers that omit `streamFn` and land on this fallback.
+Extensions that pass `ctx.modelRegistry.streamSimple` instead are covered; see "Supported path for extension authors" below.
 
 An Anthropic OAuth request on that lane carries no Claude Code billing header and comes back as `You're out of extra usage.` — a billing message for what is really a coverage gap.
 
@@ -211,10 +223,12 @@ The middle two rows are exact rather than approximate: `createProvider`'s dispat
 
 The last row is a real regression inflicted on an unrelated provider.
 `cloudflareStreams` substitutes `{CLOUDFLARE_ACCOUNT_ID}` and `{CLOUDFLARE_GATEWAY_ID}` into `model.baseUrl`; skipping it sends requests to a literal-placeholder URL.
-That wrapping lives at the **provider** layer, which an api-registry entry structurally cannot see, and it cannot be reconstructed from the public surface — `builtinModels` is not exported from `@earendil-works/pi-ai/compat`, and `getProviders()` returns provider id strings rather than `Provider` objects.
+That wrapping lives at the **provider** layer, which an api-registry entry structurally cannot see.
+When Issue #46 was decided it also could not be reconstructed from the public surface: `builtinModels` is not exported from `@earendil-works/pi-ai/compat`, and `getProviders()` returns provider id strings rather than `Provider` objects.
+pi 0.81.0's `ModelRegistry.getProvider()` removed that obstacle but not the objection; see "Re-examined for pi 0.81 through 0.87" below.
 
 This extension exists to interface with an Anthropic subscription.
-Anthropic API-key traffic and every other provider must be unaffected by it, and a global api-registry write cannot honor that: it is exact for nine of ten providers and unfixably wrong for the tenth.
+Anthropic API-key traffic and every other provider must be unaffected by it, and a global api-registry write cannot honor that: it is exact for nine of ten providers, and exact for the tenth only by re-implementing compat's own dispatch.
 So the gap is documented rather than closed.
 
 `test/index-registration.test.ts` pins this boundary — registering the extension must leave the built-in `anthropic-messages` registry entry identical.
@@ -222,21 +236,52 @@ So the gap is documented rather than closed.
 Upstream relief is not pending either.
 [pi#6089](https://github.com/earendil-works/pi/issues/6089), which asked for a provider-bound payload transform applied at pi-ai's dispatch layer, was auto-closed as not planned and never reopened.
 
-### Workaround for background-agent authors
+### Re-examined for pi 0.81 through 0.87
 
-Extensions that run their own agents are not stuck.
-`Agent` exposes a public `streamFunction`, and `agentLoop` accepts one.
-Passing the host agent's `streamFunction` routes through `modelRuntime` and therefore through the wrapper:
+Issue #53 re-opened the decision when pi 0.81.0 added `ModelRegistry.getProvider()`, and swept every release through 0.87.1 for a better seam.
+The answers below were read from the pi source at v0.86.0 (this package's peer floor) and v0.87.1, and did not change between them.
+
+1. `modelRegistry.getProvider("cloudflare-ai-gateway")` returns the effective provider: the untouched built-in, `cloudflareStreams` included, or the `composeModelProvider` result when an overlay exists.
+   The reconstruction obstacle is gone.
+2. `modelRegistry` is reachable only from a handler's `ctx`, not from `ExtensionAPI` at load time, so an api-registry entry built on it would leave every request before `session_start` unshaped.
+3. The compat lane passes the whole `model`, so an api-registry callee can read `model.provider`.
+4. A native `Provider` registration (`ModelRuntime.registerNativeProvider`) composes into `ModelRuntime` only; nothing in `coding-agent` calls `registerApiProvider`, so it does not reach the compat lane.
+
+A provider-aware api-registry override is therefore constructible, and still rejected.
+It remains a global write to the one `anthropic-messages` slot, disabling compat's built-in fast path for all ten providers.
+To stay exact it would have to re-implement compat's own branches — `withEnvApiKey`, and the `cloudflare-*` unresolved-auth branch that routes through pi-ai's private `compatModels` — and `getProvider` returns pi's *composed* provider, which differs from compat's pure built-in whenever `models.json` overlays exist.
+Its remaining beneficiaries are callers that chose `compat.streamSimple` explicitly, and they have a supported alternative.
+
+A provider-aware default stream function (`setDefaultStreamFn`) was also considered and rejected.
+Without an exported `getDefaultStreamFn` it cannot chain to the previous default, so it would hard-code `compat.streamSimple` and silently replace any other installer.
+It would reach only callers that omit a `streamFn` the types require, at the cost of a `@earendil-works/pi-agent-core` peer dependency.
+
+What did change is the supported path, below.
+Measured on 2026-09-24 with pi 0.87.1 and `anthropic/claude-haiku-4-5`, from a disposable extension issuing one request at `session_start` with `PI_ANTHROPIC_AUTH_DEBUG=all`:
+
+| Probe call | Shaping debug line for the probe | `before-provider-request` lines (probe + main prompt) |
+| --- | --- | --- |
+| `ctx.modelRegistry.streamSimple(model, context)` | yes | 2 |
+| `compat.streamSimple(model, context, { apiKey, headers })` | no | 1 |
+
+The payload was synthetic (this repository's `AGENTS.md` as the system prompt), and both probe requests returned 200, so the status code did not discriminate here; the shaping debug line is the evidence.
+
+### Supported path for extension authors
+
+Since pi 0.86.0, extensions issue model calls through `ctx.modelRegistry.stream()` and `streamSimple()`, which resolve the configured provider and its authentication.
+That call goes through `ModelRuntime` and `provider-composer`, so it reaches the wrapper — pass it as the stream function for background agents:
 
 ```ts
-// Covered: modelRuntime -> provider-composer -> the wrapper.
-await agentLoop(context, config, signal, emit, hostAgent.streamFunction);
+// Covered: ModelRegistry -> ModelRuntime -> provider-composer -> the wrapper.
+const streamFn: StreamFn = (model, context, options) =>
+  ctx.modelRegistry.streamSimple(model, context, options);
+agentLoop(prompts, context, config, signal, streamFn);
 
-// Uncovered: falls back to getDefaultStreamFn(), which is compat.streamSimple.
-await agentLoop(context, config, signal, emit);
+// Uncovered: pi-ai's compat dispatch never reaches provider-composer.
+agentLoop(prompts, context, config, signal, compat.streamSimple);
 ```
 
-Upstream draws the same distinction: `agent-session.ts` branches on `this.agent.streamFunction === streamSimple` to detect the uncovered default when it resolves summarization auth.
+pi-observational-memory 3.1.x is the worked example: `resolveWorkerStreamSimple` in `src/agents/worker-stream.ts` prefers `modelRegistry.streamSimple` for its observer, reflector, and dropper, and falls back to an explicit `compat.streamSimple` only on hosts older than pi 0.86.0, below this package's peer floor.
 
 ## What stays untouched
 
