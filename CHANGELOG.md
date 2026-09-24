@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.3.0](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.2.2...v3.3.0) (2026-09-24)
+
+
+### Features
+
+* shape Anthropic OAuth providers named in the extension config ([#70](https://github.com/gotgenes/pi-anthropic-auth/issues/70)) ([9bb9f7d](https://github.com/gotgenes/pi-anthropic-auth/commit/9bb9f7d0c45c20ec1e09e68cfe3d2099999cbca9))
+* read the project extension config on trusted sessions ([#70](https://github.com/gotgenes/pi-anthropic-auth/issues/70)) ([adb1d08](https://github.com/gotgenes/pi-anthropic-auth/commit/adb1d086bc013bb13605746a3cc261d488bb2ef2))
+
+### Documentation
+
+* document shaping extra Anthropic providers via the extension config ([#70](https://github.com/gotgenes/pi-anthropic-auth/issues/70)) ([4a2c2ba](https://github.com/gotgenes/pi-anthropic-auth/commit/4a2c2baf0c4f72eb770b43e529b8ee83c4d0626c))
+
 ## [3.2.2](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.2.1...v3.2.2) (2026-09-23)
 
 
