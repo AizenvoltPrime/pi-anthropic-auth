@@ -45,6 +45,26 @@ pi -e npm:@gotgenes/pi-anthropic-auth
 2. Select a Claude Pro/Max model and start chatting. The extension handles compatibility transparently.
 3. API-key behavior is unaffected; the extension's changes apply only to OAuth sessions.
 
+### Additional Anthropic subscriptions
+
+Pi applies an extension's transport per provider **name**, so by default only the provider named `anthropic` is shaped.
+If another extension registers a Claude subscription under its own name ([pi-multi-pass](https://github.com/hjanuschka/pi-multi-pass) registers `anthropic-2`, `anthropic-3`, …), name those providers in the extension's config file:
+
+```json
+{
+  "providers": ["anthropic-2", "anthropic-3"]
+}
+```
+
+The file is read from two places, and the providers from both are shaped:
+
+1. `~/.pi/agent/extensions/pi-anthropic-auth/config.json`, when the extension loads
+2. `<project>/.pi/extensions/pi-anthropic-auth/config.json`, at session start, and only when the project is trusted
+
+`anthropic` is always shaped and does not need listing.
+A malformed file or entry is ignored with a warning rather than failing the extension; run `/anthropic-auth:status` to see which providers are shaped and any config warnings.
+A provider removed from the file stays shaped until you run `/reload`.
+
 ## Troubleshooting
 
 ### Verify the extension is loaded
@@ -56,10 +76,24 @@ pi-anthropic-auth diagnostics
   version: 0.6.5
   module:  /root/.pi/agent/.../src/index.ts
   built-in Anthropic transport: resolved
+  shaped providers: anthropic, anthropic-2 (global)
 ```
 
 The `module` line shows which copy of the extension loaded.
 If the command is not found, the extension is not loaded at all.
+The `shaped providers` line lists `anthropic` and every provider named in a config file, with the file (`global` or `project`) that named it.
+
+### Another Anthropic provider fails with "You're out of extra usage"
+
+```text
+400 invalid_request_error: You're out of extra usage. Add more at claude.ai/settings/usage and keep going.
+```
+
+When this appears on a provider such as `anthropic-2` while the same account works on `anthropic`, the request most likely reached Anthropic without the Claude Code billing header, so it was billed as third-party usage.
+Short prompts can pass without the header, so the failure often shows up only in real sessions.
+
+Check `/anthropic-auth:status`.
+If the failing provider is missing from `shaped providers`, name it in the config file (see [Additional Anthropic subscriptions](#additional-anthropic-subscriptions)).
 
 ### Pi warns about extra usage on every OAuth session
 

@@ -77,6 +77,40 @@ A loader-aliased specifier is required because `import.meta.resolve` and non-ali
 The #35 seam concern is resolved in practice: the loader aliases `/compat` in both modes and pi ships this delegation pattern as an official example.
 The residual watch is the eventual `compat` removal, at which point `anthropicMessagesApi()` relocates off the compat entrypoint (Issue #35).
 
+## Provider-name scope
+
+`streamWith` looks the extension config up by the request's **provider**, not its api.
+In order, it uses the extension's `streamSimple` when one is registered for that provider, then a built-in base provider that supports the api, and finally pi-ai's bare `getApiProvider(model.api)` transport.
+So the wrapper covers exactly the provider names this extension registers, and `anthropic` is only the default one.
+
+An Anthropic OAuth subscription another extension registers under its own name falls through to the last branch.
+[pi-multi-pass](https://github.com/hjanuschka/pi-multi-pass) registers `anthropic-2`, `anthropic-3`, and so on, with `api: "anthropic-messages"`, `oauth`, and `models`, but no `streamSimple`, and those names have no built-in base.
+The bare transport sends the Claude Code user-agent, `x-app: cli`, the OAuth betas, and the identity block, but no billing header, and Anthropic rejects a real agent prompt with the misleading `You're out of extra usage.` 400 (Issue #70).
+The reporter measured the deciding factor on 2026-09-21 (pi 0.86.1, `claude-opus-5`, a 28 KB prompt from a failing session):
+
+| request | result |
+| --- | --- |
+| pi prompt, no billing header | 400 `You're out of extra usage.` |
+| same prompt, billing header prepended | 200 |
+| preamble sanitized, still no billing header | 400 |
+| minimal prompt, billing header prepended | 200 |
+
+Short prompts pass without the header, so a trivial repro is a false green.
+Reproduced live on 2026-09-24 (pi 0.87.1, `claude-haiku-4-5`, this repository's prompt, `anthropic-2` a second login of the same account): 400 without the config, 200 with it.
+
+The user names those providers in the extension's config file, `{ "providers": ["anthropic-2"] }`, and each is registered with the same wrapper instance as `anthropic`, so they share one learned Claude Code floor.
+The global file (`<agentDir>/extensions/pi-anthropic-auth/config.json`) is applied when the extension loads; the project file (`<cwd>/.pi/extensions/pi-anthropic-auth/config.json`) is applied at `session_start`, and only when `ctx.isProjectTrusted()`.
+That is early enough: `session_start` is awaited before the first prompt, and `ModelRuntime.streamSimple` looks the provider up per request.
+Explicit naming was chosen over auto-detection through `ModelRegistry.getRegisteredProviderIds()`, which would need an event-time scan and a check that spares providers with a built-in base such as `cloudflare-ai-gateway`.
+
+A named provider is registered but never unregistered first, unlike `anthropic` (Issue #43): it belongs to the other extension, and `unregisterProvider` would drop that owner's `models` and `oauth`.
+`ModelRuntime.registerProvider` merges defined keys over the previous registration, which makes the bare `{ api, streamSimple }` safe in either load order.
+When the owner registers first, only those two keys change.
+When we register first, the provider records a transient `no authentication method configured` composition error until the owner's registration merges `oauth` in; a name no extension ever registers keeps that error, which pi surfaces through `modelRegistry.getError()`.
+The same merge means a registered `streamSimple` can never be cleared again, so the two config layers only ever add providers, and one removed from a file stays shaped until `/reload`.
+
+Delegation stays behavior-preserving for requests the token gate passes through: a named provider without its own `streamSimple` or a built-in base already ran on the bare transport the wrapper delegates to.
+
 ## OAuth gating
 
 Shaping is gated on the resolved API key, available to the transport as `options.apiKey`.
@@ -213,7 +247,9 @@ Upstream draws the same distinction: `agent-session.ts` branches on `this.agent.
 
 ## Related files
 
-- `src/index.ts` — resolves the built-in Anthropic transport at runtime; registers the `streamSimple` wrapper and the `/anthropic-auth:status` diagnostics command.
+- `src/index.ts` — resolves the built-in Anthropic transport at runtime; registers the `streamSimple` wrapper on `anthropic` and on the providers the config files name, the `session_start` handler that applies the project config, and the `/anthropic-auth:status` diagnostics command.
+- `src/extension-config.ts` — the config file paths and a parser that turns malformed files and entries into warnings instead of throwing (Issue #70).
+- `src/extra-provider-shaping.ts` — registers the wrapper on each named provider without unregistering it, and records the naming layer and warnings for the status command (Issue #70).
 - `src/host-transport.ts` — resolves Pi's built-in Anthropic transport at runtime via an `@earendil-works/pi-ai/compat` import through Pi's loader indirection, reading the `anthropicMessagesApi()` factory (Issue #28, Issue #31, Issue #35, Issue #54); `import.meta.resolve` bypassed that indirection and failed under `pi install` / Bun.
   See `docs/builtin-transport-seam-gap.md` for why no resolution handle is both loader-safe and durable past pi-ai's `compat` removal, and the committed near-term direction.
 - `src/oauth-transport.ts` — the token-gated `streamSimple` wrapper.

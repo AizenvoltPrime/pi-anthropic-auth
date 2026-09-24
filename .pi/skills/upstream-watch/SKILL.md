@@ -40,7 +40,10 @@ Paths are relative to `~/development/pi/pi`.
 | Our assumption | Upstream file | Breaks as |
 | --- | --- | --- |
 | `anthropicMessagesApi().streamSimple` is exported from the compat entrypoint | `packages/ai/src/compat.ts`, `packages/ai/src/api/anthropic-messages.lazy.ts` | Coverage-gap (our resolver throws at load) |
-| `registerProvider` merges over prior registrations; `unregisterProvider` exists | `packages/coding-agent/src/core/model-runtime.ts`, `core/extensions/runner.ts` | Compile-time or coverage-gap |
+| `registerProvider` merges over prior registrations, including over another extension's registration of a config-named provider; `unregisterProvider` exists | `packages/coding-agent/src/core/model-runtime.ts`, `core/extensions/runner.ts` | Compile-time or coverage-gap (a named provider loses its owner's `oauth`/`models`, or our wrapper) |
+| An extension-only provider without its own `streamSimple` falls through to `getApiProvider(model.api)`, the same bare transport our wrapper delegates to | `packages/coding-agent/src/core/provider-composer.ts` (`streamWith`) | Behavioral-silent (wrapping a config-named provider stops being pass-through for non-OAuth requests) |
+| `getAgentDir()` is exported from the `@earendil-works/pi-coding-agent` root and honors `PI_CODING_AGENT_DIR` | `packages/coding-agent/src/config.ts`, `src/index.ts` | Compile-time, or the global config silently not read |
+| `session_start` is awaited before the first request, and its ctx carries `cwd` and `isProjectTrusted()` | `packages/coding-agent/src/core/agent-session.ts` (`bindExtensions`), `core/extensions/types.ts` | Coverage-gap (the first request on a project-named provider goes out unshaped) |
 | `provider-composer` routes the main loop and compaction through our wrapper | `packages/coding-agent/src/core/provider-composer.ts` (`streamWith`) | Coverage-gap |
 | OAuth `params.system` is `[identity, prompt]` text blocks | `packages/ai/src/api/anthropic-messages.ts` (`params.system`) | Behavioral-silent |
 | `messages[]` carries only `user`/`assistant` roles | `packages/ai/src/api/anthropic-messages.ts` (`convertMessages`) | Coverage-gap |

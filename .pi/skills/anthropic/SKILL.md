@@ -44,6 +44,10 @@ compatibility: Intended for the pi-anthropic-auth repository and Pi Anthropic OA
   Unrecovered rejections (override set, floor unnamed, body not rebuildable, retry rejected) reach the user with a `[pi-anthropic-auth]` hint appended to `error.message`.
   On pi 0.87.1 the retry is unreachable live without a patch, because pi's own 2.1.280 already meets every current floor; the live check forces the pin to 2.1.260 and disables the pi-version read in the working tree, then looks for the `claude-code-version-recovery` debug line.
 - The wrapper covers the main loop and compaction — everything that dispatches through `modelRuntime`.
+- It covers only the provider names this extension registers: `anthropic`, plus any the user names in `extensions/pi-anthropic-auth/config.json` (global, or a trusted project's `.pi/`).
+  An Anthropic OAuth subscription another extension registers under its own name (pi-multi-pass's `anthropic-2`) is otherwise unshaped and fails real prompts with the extra-usage 400 (Issue #70).
+  Reproduced live on 2026-09-24 with a second login of the same account: 400 without the config, 200 with it.
+  Short prompts pass either way, so check `/anthropic-auth:status`'s `shaped providers` line before debugging anything else.
 - On pi >=0.80.8, `agentLoop` background agents and extensions calling pi-ai's `compat.streamSimple` directly are confirmed uncovered, and cannot be covered from this extension (Issue #46); see `docs/architecture.md` for why, and for the `agent.streamFunction` workaround.
 
 ## Fast Debugging Workflow
@@ -165,6 +169,8 @@ Do not "fix" that by calling `registerApiProvider` — the registry is keyed by 
 - `docs/plans/gap-analysis-and-next-steps.md`
 - `src/index.ts`
 - `src/diagnostics.ts`
+- `src/extension-config.ts`
+- `src/extra-provider-shaping.ts`
 - `src/oauth-transport.ts`
 - `src/request-shaping.ts`
 - `src/system-prompt-sections.ts`

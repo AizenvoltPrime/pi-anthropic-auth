@@ -41,6 +41,7 @@ The current implementation does the following:
 6. Raises the billing header's `cc_version` to Pi's own `claude-cli` version at the wire when Pi reports a higher one, making the bundled pin a floor rather than the answer (Issue #74)
 7. Recovers from a `claude_code_version_too_old` rejection by retrying once at the floor Anthropic names, remembering that floor for later requests, and appending a hint to the error when it cannot recover (Issue #75)
 8. Gates all shaping on the `sk-ant-oat` OAuth access-token prefix, so API-key and non-Anthropic requests pass through untouched
+9. Registers the same wrapper on any extra provider named in the extension's config file, for Anthropic OAuth subscriptions another extension registers under its own name (pi-multi-pass's `anthropic-2`, Issue #70)
 
 It wraps, but does not reimplement, Pi's built-in Anthropic streaming transport.
 The wrapper delegates to Pi's own built-in Anthropic `streamSimple` transport and injects two steps: an `onPayload` shaping step, and an `options.fetch` wrapper for the version reconciliation and rejection recovery, which need the built request's headers and the response.
@@ -76,7 +77,7 @@ The main extension entrypoint is `src/index.ts`.
 
 It uses one Pi extension seam:
 
-1. `pi.registerProvider("anthropic", { api: "anthropic-messages", streamSimple })`
+1. `pi.registerProvider("anthropic", { api: "anthropic-messages", streamSimple })`, plus the same `{ api, streamSimple }` registration for each provider named in `<agentDir>/extensions/pi-anthropic-auth/config.json`, and — from a `session_start` handler, only for a trusted project — in `<cwd>/.pi/extensions/pi-anthropic-auth/config.json`
 
 The `streamSimple` wrapper is the single shaping point.
 It delegates to Pi's built-in Anthropic `streamSimple` transport (resolved at runtime by `src/host-transport.ts`) while injecting an `onPayload` step that runs all provider-specific logic (billing header injection, system prompt shaping).
@@ -111,6 +112,8 @@ Current source layout:
 11. `src/system-prompt-shaping.ts`: section-aware Anthropic OAuth prompt sanitizer that replaces Pi's preamble, drops the `docs` section, strips the `tools` filler, and preserves everything else
 12. `src/debug.ts`: opt-in structured debug logging for live OAuth repros
 13. `src/diagnostics.ts`: `ExtensionDiagnostics` value object, formatter, and handler factory for the `/anthropic-auth:status` command
+14. `src/extension-config.ts`: the config file paths and a parser that turns malformed files and entries into warnings instead of throwing (Issue #70)
+15. `src/extra-provider-shaping.ts`: registers the wrapper on each provider the config names, never unregistering it, and records the naming layer and warnings for the status command (Issue #70)
 
 ### Project Skills
 
@@ -482,6 +485,8 @@ Current suites map roughly to:
 8. `test/system-prompt-sections.test.ts` — chunk parsing and the byte-exact round-trip, including attribute-bearing tags, nested same-name tags, and unmatched open tags.
 9. `test/pi-anthropic-ordering-experiment.test.ts` — pinned experiments documenting Pi's tool-use and interleaved-thinking serialization behavior, and our passthrough of both (Issue #66).
 10. `test/upstream-prompt-drift.test.ts` — the prompt prefix, section names, and anchors in `src/constants.ts` checked against the installed Pi's own `buildSystemPrompt` output, plus pins that the parser round-trips that prompt and that shaping takes the section path rather than the degraded passthrough.
+11. `test/extension-config.test.ts` — config paths, the parsing rules (`anthropic` and duplicates dropped, malformed files and entries warned), and a missing file staying silent.
+12. `test/extra-provider-shaping.test.ts` — one `{ api, streamSimple }` registration per named provider, no unregister, first layer wins, and per-layer warning replacement.
 
 Priority areas for new tests:
 
@@ -515,6 +520,17 @@ Built-in compaction (`completeSimple`) issues Anthropic requests through the sam
 Third-party background agents calling pi-ai's bare `streamSimple` do not reach our wrapper at all on pi >=0.80.8, and cannot be covered from this extension (Issue #46).
 Any shaping that must apply to every OAuth request `provider-composer` sees belongs in the transport wrapper, not in `before_provider_request`.
 `test/index-registration.test.ts` pins the boundary: registering the extension must leave the built-in `anthropic-messages` api-registry entry untouched.
+
+### Shaping Is Scoped By Provider Name, Not By Api
+
+`provider-composer`'s `streamWith` looks the extension config up by the request's provider, so only provider names this extension registers are shaped.
+An Anthropic OAuth subscription another extension registers under its own name (pi-multi-pass's `anthropic-2`) otherwise falls through to pi's bare transport, which sends no billing header, and a real agent prompt is rejected with the misleading `You're out of extra usage.` 400 (Issue #70).
+Short prompts pass without the header, so reproduce with a real project prompt — `-p "reply with exactly: PONG"` in this repo is enough, because the prompt carries this `AGENTS.md`.
+
+The user names such providers in the extension's config file; see `docs/architecture.md`, "Provider-name scope".
+Never `unregisterProvider` a named provider: it belongs to the other extension, and unregistering drops that owner's `models` and `oauth`.
+The merge contract (see "`registerProvider` Merges, It Does Not Replace") is what makes the bare `{ api, streamSimple }` registration safe in either load order, and also why the config layers only ever add providers.
+`src/index.ts` reads the global file through `getAgentDir()`, so `test/index-registration.test.ts` stubs `PI_CODING_AGENT_DIR` to an empty temp dir in a file-level `beforeEach`; a new test file that loads `#src/index` without that stub reads the developer's real config.
 
 ### Claude Code Version Floors Gate New Models
 
