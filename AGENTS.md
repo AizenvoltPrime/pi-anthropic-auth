@@ -37,7 +37,7 @@ The current implementation does the following:
 2. Wraps Pi's built-in Anthropic transport to shape OAuth requests on every call path that reaches `provider-composer` (main loop, compaction, and extension calls through `ctx.modelRegistry.streamSimple()`; not explicit `compat.streamSimple` callers — see Issue #46 and Issue #53)
 3. Prepends an Anthropic billing/content-consistency header block to `system[]`
 4. Sanitizes Pi's default prompt section by section during the same shaping pass — replacing the untagged preamble with a minimal neutral prompt, dropping the `docs` section, and stripping the custom-tool filler from inside `tools` — while preserving every other section byte-identically (tool snippets, guidelines, and appended extension content)
-5. Applies the same section rules to the mid-conversation system messages Pi 0.86.0 re-sends on models that accept them (Issue #69)
+5. Applies the same section rules to the mid-conversation system messages Pi 0.86.0 re-sends on models that accept them (Issue #69), while keeping the content-less effort messages Pi sends on managed-effort models (PR #79)
 6. Raises the billing header's `cc_version` to Pi's own `claude-cli` version at the wire when Pi reports a higher one, making the bundled pin a floor rather than the answer (Issue #74)
 7. Recovers from a `claude_code_version_too_old` rejection by retrying once at the floor Anthropic names, remembering that floor for later requests, and appending a hint to the error when it cannot recover (Issue #75)
 8. Gates all shaping on the `sk-ant-oat` OAuth access-token prefix, so API-key and non-Anthropic requests pass through untouched
@@ -467,8 +467,8 @@ Use `tool-use` by default when debugging real CLI flows so logs stay quiet until
 1. Test files are named `*.test.ts` and are collocated under `test/` (not next to source).
 2. Tests use `node:assert/strict` for assertions and `vitest`'s `test` (and `onTestFinished` for per-test cleanup) for the runner. Existing files are the reference style — keep new tests consistent.
 3. Keep tests focused on compatibility helpers rather than broad end-to-end behavior. Mock `globalThis.fetch` for OAuth flows; build payload fixtures inline rather than depending on Pi internals.
-   Two suites are sanctioned exceptions, because depending on the internal *is* what they verify: `test/upstream-prompt-drift.test.ts` imports Pi's own `buildSystemPrompt` (Issue #52), and `test/claude-code-version-drift.test.ts` drives Pi's own Anthropic transport to read its `claude-cli` user-agent (Issue #74).
-   Do not treat either as precedent for other suites.
+   Three suites are sanctioned exceptions, because depending on the internal *is* what they verify: `test/upstream-prompt-drift.test.ts` imports Pi's own `buildSystemPrompt` (Issue #52), `test/claude-code-version-drift.test.ts` drives Pi's own Anthropic transport to read its `claude-cli` user-agent (Issue #74), and `test/managed-effort-drift.test.ts` drives the same transport to read the effort messages it sends (PR #79).
+   Do not treat any of them as precedent for other suites.
 4. When asserting on shaped system prompts, prefer regex matches that pin specific markers (`/^You are an expert coding assistant\./`, `/<project_context>/`) over deep-equal on full prompt strings, so tests survive harmless reformatting upstream.
    Pin markers Pi actually emits: Pi replaced the `# Project Context` heading with `<project_context>` tags in v0.75.0, and an assertion on the old heading can only pass against a fixture that invented it (Issue #47).
 
@@ -477,7 +477,7 @@ Use `tool-use` by default when debugging real CLI flows so logs stay quiet until
 Current suites map roughly to:
 
 1. `test/oauth-transport.test.ts` — `sk-ant-oat` token gating, `onPayload` composition, `fetch` injection and composition, and delegation to the built-in transport.
-2. `test/request-shaping.test.ts` — billing header injection, system block layering, beta-header merging, and the structural messages-payload guard.
+2. `test/request-shaping.test.ts` — billing header injection, system block layering, beta-header merging, the structural messages-payload guard, and mid-conversation system messages, including the content-less effort messages that survive shaping (PR #79).
 3. `test/claude-code-version.test.ts` — `claude-cli` user-agent parsing and numeric `X.Y.Z` comparison, including the unparseable-candidate fallbacks, and the learned floor.
 4. `test/billing-version-sync.test.ts` — the wire-level `cc_version` upgrade: pass-through when Pi is absent, lower, or equal; rewrite when Pi is higher; the env override's absolute precedence; and that nothing outside the billing block changes.
    Also the rejection recovery: one retry at the named floor, the floor shared with later requests, success and unrelated 400 responses left unread, and each hint on an unrecovered rejection (Issue #75).
@@ -489,6 +489,7 @@ Current suites map roughly to:
 10. `test/upstream-prompt-drift.test.ts` — the prompt prefix, section names, and anchors in `src/constants.ts` checked against the installed Pi's own `buildSystemPrompt` output, plus pins that the parser round-trips that prompt and that shaping takes the section path rather than the degraded passthrough.
 11. `test/extension-config.test.ts` — config paths, the parsing rules (`anthropic` and duplicates dropped, malformed files and entries warned), and a missing file staying silent.
 12. `test/extra-provider-shaping.test.ts` — one `{ api, streamSimple }` registration per named provider, no unregister, first layer wins, and per-layer warning replacement.
+13. `test/managed-effort-drift.test.ts` — the offline drift alarm for per-message effort: Pi's catalog still flags a managed-effort model, Pi still carries historical and active effort in content-less system messages, and OAuth shaping keeps every one of them (PR #79).
 
 Priority areas for new tests:
 
