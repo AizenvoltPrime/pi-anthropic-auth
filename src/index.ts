@@ -7,7 +7,11 @@ import {
   createStatusCommandHandler,
   type ExtensionDiagnostics,
 } from "./diagnostics";
-import { globalConfigPath, loadExtensionConfig } from "./extension-config";
+import {
+  globalConfigPath,
+  loadExtensionConfig,
+  projectConfigPath,
+} from "./extension-config";
 import { ExtraProviderShaping } from "./extra-provider-shaping";
 import { resolveBuiltinAnthropicStreamSimple } from "./host-transport";
 import { createAnthropicOAuthStreamSimple } from "./oauth-transport";
@@ -107,6 +111,22 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     "global",
   );
 
+  // The project layer needs the session's cwd and trust decision, which only
+  // arrive with `session_start`.  An untrusted project's file is never read.
+  // `session_start` is awaited before the first prompt, and pi looks the
+  // provider up per request, so a project provider is shaped from the first
+  // request too.  Warnings from both layers are reported here, where a UI is
+  // in hand.
+  pi.on("session_start", (_event, ctx) => {
+    if (ctx.isProjectTrusted()) {
+      extraProviders.apply(
+        loadExtensionConfig(projectConfigPath(ctx.cwd)),
+        "project",
+      );
+    }
+    reportConfigWarnings(extraProviders.warnings(), ctx);
+  });
+
   const loadDiagnostics = {
     version: pkg.default.version,
     modulePath: fileURLToPath(import.meta.url),
@@ -127,4 +147,24 @@ export default async function (pi: ExtensionAPI): Promise<void> {
       "Show pi-anthropic-auth diagnostics: version, loaded module path, transport status, and shaped providers.",
     handler: createStatusCommandHandler(readDiagnostics),
   });
+}
+
+/** The `session_start` context fields warning reporting reads. */
+interface WarningReportContext {
+  hasUI: boolean;
+  ui: { notify(message: string, type?: "info" | "warning" | "error"): void };
+}
+
+function reportConfigWarnings(
+  warnings: readonly string[],
+  ctx: WarningReportContext,
+): void {
+  for (const warning of warnings) {
+    const message = `[pi-anthropic-auth] ${warning}`;
+    if (ctx.hasUI) {
+      ctx.ui.notify(message, "warning");
+    } else {
+      console.warn(message);
+    }
+  }
 }

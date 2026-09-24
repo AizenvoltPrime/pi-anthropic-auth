@@ -32,7 +32,7 @@ import {
   vi,
 } from "vitest";
 import type { StatusCommandContext } from "#src/diagnostics";
-import { globalConfigPath } from "#src/extension-config";
+import { globalConfigPath, projectConfigPath } from "#src/extension-config";
 
 const OAUTH_TOKEN = "sk-ant-oat01-example-access-token";
 
@@ -72,9 +72,20 @@ afterEach(() => {
 });
 
 function writeGlobalConfig(config: unknown): void {
-  const path = globalConfigPath(agentDir);
+  writeConfig(globalConfigPath(agentDir), JSON.stringify(config));
+}
+
+/** Writes a project config under a fresh temp cwd and returns that cwd. */
+function writeProjectConfig(text: string): string {
+  const cwd = mkdtempSync(join(tmpdir(), "pi-anthropic-auth-project-"));
+  onTestFinished(() => rmSync(cwd, { recursive: true, force: true }));
+  writeConfig(projectConfigPath(cwd), text);
+  return cwd;
+}
+
+function writeConfig(path: string, text: string): void {
   mkdirSync(join(path, ".."), { recursive: true });
-  writeFileSync(path, JSON.stringify(config));
+  writeFileSync(path, text);
 }
 
 /**
@@ -256,6 +267,17 @@ type SessionStartHandler = (
   event: { type: "session_start"; reason: string },
   ctx: FakeSessionContext,
 ) => unknown;
+
+function createSessionContext(
+  overrides: Partial<Omit<FakeSessionContext, "ui">> = {},
+): FakeSessionContext {
+  return {
+    cwd: overrides.cwd ?? "/nonexistent-project",
+    hasUI: overrides.hasUI ?? false,
+    isProjectTrusted: overrides.isProjectTrusted ?? (() => false),
+    ui: { notify: vi.fn<(message: string, type?: string) => void>() },
+  };
+}
 
 function samplePayload() {
   return {
@@ -478,6 +500,135 @@ describe("index registration: extra providers named in the global config", () =>
 
     const [report] = consoleSpy.mock.calls[0];
     assert.match(report, /shaped providers: anthropic, anthropic-2 \(global\)/);
+  });
+});
+
+// The project layer needs a cwd and a trust decision, which only arrive with
+// `session_start`.
+describe("index registration: the project config at session start", () => {
+  beforeEach(() => {
+    resetApiProviders();
+    delegateCalls.length = 0;
+    builtinTransportMock.mockClear();
+  });
+
+  describe("project trust", () => {
+    test("a trusted project's config adds its providers", async () => {
+      const cwd = writeProjectConfig('{ "providers": ["anthropic-3"] }');
+
+      const { default: registerExtension } = await import("#src/index");
+      const { pi, dispatch, fireSessionStart } = createFakePi();
+      await registerExtension(pi);
+      await fireSessionStart(
+        createSessionContext({ cwd, isProjectTrusted: () => true }),
+      );
+
+      dispatch({ ...EXTRA_PROVIDER_MODEL, provider: "anthropic-3" }, CONTEXT, {
+        apiKey: OAUTH_TOKEN,
+      });
+      assert.equal(await delegateCallWasShaped(delegateCalls[0]), true);
+    });
+
+    test("an untrusted project's config is never applied", async () => {
+      const cwd = writeProjectConfig('{ "providers": ["anthropic-3"] }');
+
+      const { default: registerExtension } = await import("#src/index");
+      const { pi, calls, fireSessionStart } = createFakePi();
+      await registerExtension(pi);
+      await fireSessionStart(
+        createSessionContext({ cwd, isProjectTrusted: () => false }),
+      );
+
+      assert.deepEqual(calls, ["unregister:anthropic", "register:anthropic"]);
+    });
+  });
+
+  describe("config warnings", () => {
+    test("are notified as warnings when a UI is available", async () => {
+      writeGlobalConfig({ providers: "anthropic-2" });
+      const cwd = writeProjectConfig("not json");
+
+      const { default: registerExtension } = await import("#src/index");
+      const { pi, fireSessionStart } = createFakePi();
+      await registerExtension(pi);
+      const ctx = createSessionContext({
+        cwd,
+        hasUI: true,
+        isProjectTrusted: () => true,
+      });
+      await fireSessionStart(ctx);
+
+      expectWarnings(
+        ctx.ui.notify.mock.calls.map(([message, type]) => {
+          assert.equal(type, "warning");
+          return message;
+        }),
+      );
+    });
+
+    test("go to console.warn without a UI", async () => {
+      writeGlobalConfig({ providers: "anthropic-2" });
+      const cwd = writeProjectConfig("not json");
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      onTestFinished(() => warnSpy.mockRestore());
+
+      const { default: registerExtension } = await import("#src/index");
+      const { pi, fireSessionStart } = createFakePi();
+      await registerExtension(pi);
+      const ctx = createSessionContext({ cwd, isProjectTrusted: () => true });
+      await fireSessionStart(ctx);
+
+      expectWarnings(warnSpy.mock.calls.map(([message]) => String(message)));
+      assert.equal(ctx.ui.notify.mock.calls.length, 0);
+    });
+
+    test("are not reported when there are none", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      onTestFinished(() => warnSpy.mockRestore());
+
+      const { default: registerExtension } = await import("#src/index");
+      const { pi, fireSessionStart } = createFakePi();
+      await registerExtension(pi);
+      await fireSessionStart(createSessionContext());
+
+      assert.equal(warnSpy.mock.calls.length, 0);
+    });
+
+    /** One global warning, then one project warning, each attributed. */
+    function expectWarnings(messages: string[]): void {
+      assert.equal(messages.length, 2);
+      assert.match(
+        messages[0],
+        /^\[pi-anthropic-auth\] .*config\.json: "providers" must be an array/,
+      );
+      assert.match(
+        messages[1],
+        /^\[pi-anthropic-auth\] .*config\.json: is not valid JSON/,
+      );
+    }
+  });
+
+  test("the status report lists providers from both layers", async () => {
+    writeGlobalConfig({ providers: ["anthropic-2"] });
+    const cwd = writeProjectConfig('{ "providers": ["anthropic-3"] }');
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    onTestFinished(() => consoleSpy.mockRestore());
+
+    const { default: registerExtension } = await import("#src/index");
+    const { pi, commands, fireSessionStart } = createFakePi();
+    await registerExtension(pi);
+    await fireSessionStart(
+      createSessionContext({ cwd, isProjectTrusted: () => true }),
+    );
+    await commands
+      .get("anthropic-auth:status")
+      ?.handler("", { hasUI: false, ui: { notify: vi.fn() } });
+
+    const [report] = consoleSpy.mock.calls[0];
+    assert.match(
+      report,
+      /shaped providers: anthropic, anthropic-2 \(global\), anthropic-3 \(project\)/,
+    );
   });
 });
 
