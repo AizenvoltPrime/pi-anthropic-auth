@@ -19,8 +19,8 @@ It keeps everything you'd expect — the built-in `anthropic` provider, the full
 Requests to non-Anthropic providers and plain API-key Anthropic requests pass through completely untouched — the extension only activates when it detects an Anthropic OAuth access token (`sk-ant-oat`).
 
 Shaping runs in a thin transport wrapper around Pi's own Anthropic transport, so it applies to interactive turns and to compaction — not just the main turn.
-Background agents that run their own agent loop are a known exception on Pi 0.80.8 and later.
-See [docs/architecture.md](docs/architecture.md) for how this works, and for the workaround if you write such an extension.
+Background agents that run their own agent loop are shaped when they issue requests through `ctx.modelRegistry.streamSimple()`, as pi-observational-memory does; those that call pi-ai's `compat.streamSimple` directly are not.
+See [docs/architecture.md](docs/architecture.md) for how this works, and for the supported path if you write such an extension.
 
 Pi's own extra-usage warning still appears on every Anthropic OAuth session and is not suppressed by this extension — see [Pi warns about extra usage on every OAuth session](#pi-warns-about-extra-usage-on-every-oauth-session).
 
@@ -106,7 +106,7 @@ Pi's check looks only at which provider the selected model belongs to and whethe
 It has no way to see that a provider registration is in place, so no extension can suppress it.
 
 The warning is also not entirely wrong.
-Interactive turns and compaction go through this extension's request shaping; requests from background agents that run their own agent loop do not, and for those the warning describes exactly what happens.
+Interactive turns, compaction, and extension calls through `ctx.modelRegistry.streamSimple()` go through this extension's request shaping; requests that extensions send through pi-ai's `compat.streamSimple` do not, and for those the warning describes exactly what happens.
 See [docs/architecture.md](docs/architecture.md) for the full call-path table.
 
 This is a startup notice, not a failure.

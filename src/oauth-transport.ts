@@ -73,11 +73,14 @@ export function isAnthropicOAuthToken(
  * other extensions' `before_provider_request` handlers continue to run on the
  * main loop, and our shaping is applied last — closest to the wire.
  *
- * Requests that dispatch through pi-ai's own `compat.streamSimple` — third-party
- * background agents running via `agentLoop` on `setDefaultStreamFn` — never
- * reach this wrapper on pi >=0.80.8 and remain unshaped (Issue #46).
- * `docs/architecture.md` records why that gap is not closed here and how
- * background-agent authors can opt into coverage.
+ * Extension model calls through `ctx.modelRegistry.streamSimple()` (pi
+ * >=0.86.0) also route through `modelRuntime`, so background agents that pass
+ * it as their stream function are shaped.  Requests that dispatch through
+ * pi-ai's own `compat.streamSimple` — passed explicitly, or reached through
+ * the `setDefaultStreamFn` fallback when a caller omits `streamFn` — never
+ * reach this wrapper on pi >=0.80.8 and remain unshaped (Issue #46,
+ * Issue #53).  `docs/architecture.md` records why that gap is not closed here
+ * and the supported path for extension authors.
  *
  * Gating is strictly OAuth-only: when the request is not an Anthropic OAuth
  * token, the payload passes through untouched, preserving Pi's normal

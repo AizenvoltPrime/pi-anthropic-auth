@@ -37,18 +37,21 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   //
   // `registerProvider` stores this config in Pi's own `extensionProviders`
   // map, and `provider-composer`'s `streamWith` applies it to requests that
-  // arrive through `modelRuntime`.  That covers the interactive loop and
-  // compaction, which reuses `agent.streamFunction`.  It does NOT cover
-  // callers that dispatch through pi-ai's own `compat.streamSimple` —
-  // `agentLoop` background agents relying on `setDefaultStreamFn`, and
-  // extensions calling `compat.streamSimple` directly.  Up to pi 0.80.7,
+  // arrive through `modelRuntime`.  That covers the interactive loop,
+  // compaction (which reuses `agent.streamFunction`), and extension model
+  // calls through `ctx.modelRegistry.streamSimple()` (pi >=0.86.0), the
+  // supported path for background agents.  It does NOT cover callers that
+  // dispatch through pi-ai's own `compat.streamSimple` — extensions passing
+  // it explicitly, and untyped callers that omit `streamFn` and land on the
+  // `setDefaultStreamFn` fallback.  Up to pi 0.80.7,
   // `ModelRegistry.applyProviderConfig` bridged us into pi-ai's api registry
   // and those calls were covered too; the 0.80.8 `ModelRuntime` rewrite
   // dropped the bridge (Issue #46).  We deliberately do not re-add it: the
   // registry is keyed by api, not provider, so an override would divert all
-  // ten `anthropic-messages` providers off their built-in branch and break
-  // `cloudflare-ai-gateway`.  See `docs/architecture.md` for the full record
-  // and the workaround for background-agent authors.
+  // ten `anthropic-messages` providers off their built-in branch, and staying
+  // exact for `cloudflare-ai-gateway` would mean re-implementing compat's own
+  // dispatch (Issue #53).  See `docs/architecture.md` for the full record and
+  // the supported path for extension authors.
   //
   // The delegate is the built-in Anthropic transport resolved at runtime (see
   // `resolveBuiltinAnthropicStreamSimple`) rather than read out of the api
