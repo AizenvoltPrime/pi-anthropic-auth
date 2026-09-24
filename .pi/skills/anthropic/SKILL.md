@@ -48,7 +48,8 @@ compatibility: Intended for the pi-anthropic-auth repository and Pi Anthropic OA
   An Anthropic OAuth subscription another extension registers under its own name (pi-multi-pass's `anthropic-2`) is otherwise unshaped and fails real prompts with the extra-usage 400 (Issue #70).
   Reproduced live on 2026-09-24 with a second login of the same account: 400 without the config, 200 with it.
   Short prompts pass either way, so check `/anthropic-auth:status`'s `shaped providers` line before debugging anything else.
-- On pi >=0.80.8, `agentLoop` background agents and extensions calling pi-ai's `compat.streamSimple` directly are confirmed uncovered, and cannot be covered from this extension (Issue #46); see `docs/architecture.md` for why, and for the `agent.streamFunction` workaround.
+- Background agents that pass `ctx.modelRegistry.streamSimple()` as their stream function (pi >=0.86.0) route through `modelRuntime` and are shaped; pi-observational-memory 3.1.x does this (measured live, Issue #53).
+- On pi >=0.80.8, callers that dispatch through pi-ai's `compat.streamSimple` (passed explicitly, or reached through the `setDefaultStreamFn` fallback when `streamFn` is omitted) are confirmed uncovered, and cannot be covered from this extension (Issue #46); see `docs/architecture.md` for why, and for the supported path for extension authors.
 
 ## Fast Debugging Workflow
 
@@ -143,7 +144,7 @@ The body splice is an exact-string replacement of the header we emitted moments 
 The recovery reads only a 400, through `response.clone()`, so the streaming success path is never touched.
 
 Gate on the `sk-ant-oat` access-token prefix (`options.apiKey`), the same signal Pi uses internally.
-This covers the main loop and compaction; `agentLoop` background agents are confirmed uncovered on pi >=0.80.8 and are out of reach from here (Issue #46).
+This covers the main loop, compaction, and extension calls through `ctx.modelRegistry.streamSimple()`; `compat.streamSimple` callers are confirmed uncovered on pi >=0.80.8 and are out of reach from here (Issue #46, Issue #53).
 Do not "fix" that by calling `registerApiProvider` — the registry is keyed by api, not provider, so it would affect all ten `anthropic-messages` providers and break `cloudflare-ai-gateway`.
 
 ### Why not `before_provider_request` or `before_agent_start`

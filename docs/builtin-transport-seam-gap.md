@@ -122,6 +122,7 @@ The #35 seam concern is therefore resolved in practice on pi >=0.80.8; the resid
 
 The coverage half is not, and will not be from this side.
 pi 0.80.8 removed the api-registry bridge, so foreign `agentLoop` callers are once again unshaped, and the only lever that would reach them is api-scoped rather than provider-scoped (Issue [#46]).
+pi 0.86.0's `ctx.modelRegistry.streamSimple()` later gave foreign callers a supported path that reaches the wrapper, so only callers that dispatch through `compat.streamSimple` remain unshaped (Issue [#53]).
 
 This repo keeps shaping at the registry transport and only hardens how it obtains the built-in delegate.
 `src/host-transport.ts` was switched from `import.meta.resolve` (plus filesystem resolution) to an explicit `@earendil-works/pi-ai/compat` subpath import, reading the non-deprecated `anthropicMessagesApi().streamSimple` factory.
@@ -164,6 +165,7 @@ Alternatives considered and rejected for the near term:
 [#28]: https://github.com/gotgenes/pi-anthropic-auth/issues/28
 [#31]: https://github.com/gotgenes/pi-anthropic-auth/issues/31
 [#46]: https://github.com/gotgenes/pi-anthropic-auth/issues/46
+[#53]: https://github.com/gotgenes/pi-anthropic-auth/issues/53
 [#54]: https://github.com/gotgenes/pi-anthropic-auth/issues/54
 [#32]: https://github.com/gotgenes/pi-anthropic-auth/issues/32
 [#33]: https://github.com/gotgenes/pi-anthropic-auth/issues/33

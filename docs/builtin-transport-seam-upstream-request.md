@@ -21,6 +21,7 @@ One premise in this brief has since changed, and it strengthens the ask rather t
 The brief assumes our `registerProvider({ api, streamSimple })` reaches pi-ai's dispatch through the api registry.
 pi 0.80.8's `ModelRuntime` rewrite dropped that bridge, so the extension's transport now only sees requests routed through `modelRuntime` — the main loop and compaction.
 Foreign `agentLoop` callers, the harder half the ask was written for, are no longer reachable at all, and the api-registry workaround is ruled out because it is api-scoped rather than provider-scoped (Issue [#46]).
+pi 0.86.0's `ctx.modelRegistry.streamSimple()` later gave those callers a supported path that reaches the wrapper; only callers that dispatch through `compat.streamSimple` remain unreachable (Issue [#53]).
 
 ## The ask, in one sentence
 
@@ -113,6 +114,7 @@ These are questions the operator may want pi maintainers to answer, framed as ge
 [pi#3262]: https://github.com/earendil-works/pi/issues/3262
 [pi#6089]: https://github.com/earendil-works/pi/issues/6089
 [#46]: https://github.com/gotgenes/pi-anthropic-auth/issues/46
+[#53]: https://github.com/gotgenes/pi-anthropic-auth/issues/53
 [pi#3987]: https://github.com/earendil-works/pi/issues/3987
 [pi#4038]: https://github.com/earendil-works/pi/issues/4038
 [pi#4980]: https://github.com/earendil-works/pi/issues/4980
