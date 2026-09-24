@@ -49,12 +49,16 @@ export function formatDiagnosticsReport(d: ExtensionDiagnostics): string {
  * Returns a command handler that routes the diagnostics report to the Pi UI
  * notification system when a UI is available, or falls back to `console.log`
  * for headless (`-p`) and RPC invocations.
+ *
+ * @param readDiagnostics Called on every invocation, because some of what the
+ *   report shows (project-layer providers) only becomes known after the
+ *   command is registered.
  */
 export function createStatusCommandHandler(
-  diagnostics: ExtensionDiagnostics,
+  readDiagnostics: () => ExtensionDiagnostics,
 ): (args: string, ctx: StatusCommandContext) => Promise<void> {
   return (_args, ctx) => {
-    const report = formatDiagnosticsReport(diagnostics);
+    const report = formatDiagnosticsReport(readDiagnostics());
     if (ctx.hasUI) {
       ctx.ui.notify(report, "info");
     } else {

@@ -99,6 +99,6 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   pi.registerCommand("anthropic-auth:status", {
     description:
       "Show pi-anthropic-auth diagnostics: version, loaded module path, and transport status.",
-    handler: createStatusCommandHandler(diagnostics),
+    handler: createStatusCommandHandler(() => diagnostics),
   });
 }

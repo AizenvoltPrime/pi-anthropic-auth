@@ -27,7 +27,7 @@ describe("createStatusCommandHandler", () => {
       hasUI: true,
       ui: { notify },
     };
-    const handler = createStatusCommandHandler(SAMPLE);
+    const handler = createStatusCommandHandler(() => SAMPLE);
     await handler("", ctx);
     assert.equal(notify.mock.calls.length, 1);
     const [message, type] = notify.mock.calls[0];
@@ -41,7 +41,7 @@ describe("createStatusCommandHandler", () => {
       hasUI: false,
       ui: { notify: vi.fn() },
     };
-    const handler = createStatusCommandHandler(SAMPLE);
+    const handler = createStatusCommandHandler(() => SAMPLE);
     await handler("", ctx);
     assert.equal(consoleSpy.mock.calls.length, 1);
     const [message] = consoleSpy.mock.calls[0];
@@ -54,9 +54,20 @@ describe("createStatusCommandHandler", () => {
       hasUI: false,
       ui: { notify },
     };
-    const handler = createStatusCommandHandler(SAMPLE);
+    const handler = createStatusCommandHandler(() => SAMPLE);
     await handler("", ctx);
     assert.equal(notify.mock.calls.length, 0);
+  });
+
+  // State such as project-layer providers arrives after the command is
+  // registered, so the report must reflect the reader's value at call time.
+  test("reads the diagnostics when invoked, not when created", async () => {
+    let current = SAMPLE;
+    const handler = createStatusCommandHandler(() => current);
+    current = { ...SAMPLE, version: "9.9.9" };
+    await handler("", { hasUI: false, ui: { notify: vi.fn() } });
+    const [message] = consoleSpy.mock.calls[0];
+    assert.match(message, /9\.9\.9/);
   });
 });
 
