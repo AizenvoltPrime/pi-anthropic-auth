@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.3.2](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.3.1...v3.3.2) (2026-09-24)
+
+
+### Bug Fixes
+
+* keep Pi's per-message effort on managed-effort models ([65b14d2](https://github.com/gotgenes/pi-anthropic-auth/commit/65b14d2ec1738be93565b25cb86ddf0140a4adfa))
+
+### Documentation
+
+* record that effort-carrying system messages survive shaping ([#79](https://github.com/gotgenes/pi-anthropic-auth/issues/79)) ([55f876a](https://github.com/gotgenes/pi-anthropic-auth/commit/55f876ab1072efe8dc580a065fe1a51da0571f9e))
+
 ## [3.3.1](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.3.0...v3.3.1) (2026-09-24)
 
 
