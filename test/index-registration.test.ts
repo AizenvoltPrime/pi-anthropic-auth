@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type {
   Api,
   AssistantMessageEventStream,
@@ -20,8 +23,16 @@ import type {
   ProviderConfig,
 } from "@earendil-works/pi-coding-agent";
 import type { Mock } from "vitest";
-import { beforeEach, describe, onTestFinished, test, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  onTestFinished,
+  test,
+  vi,
+} from "vitest";
 import type { StatusCommandContext } from "#src/diagnostics";
+import { globalConfigPath } from "#src/extension-config";
 
 const OAUTH_TOKEN = "sk-ant-oat01-example-access-token";
 
@@ -34,6 +45,37 @@ const MODEL = {
 // `normalizeContext` is the only producer of the brand pi-ai's stream
 // signature requires, so the fake is minted rather than cast.
 const CONTEXT = normalizeContext({ messages: [] });
+
+/**
+ * A model on an extra Anthropic subscription another extension registered,
+ * the way pi-multi-pass registers `anthropic-2` (Issue #70).
+ */
+const EXTRA_PROVIDER_MODEL = {
+  id: "claude-haiku-4-5",
+  api: "anthropic-messages",
+  provider: "anthropic-2",
+} as unknown as Model<"anthropic-messages">;
+
+// `src/index.ts` reads the global config from `getAgentDir()`, which honours
+// `PI_CODING_AGENT_DIR` at call time.  Every test points it at an empty temp
+// dir so the developer's real `~/.pi/agent` config is never read.
+let agentDir: string;
+
+beforeEach(() => {
+  agentDir = mkdtempSync(join(tmpdir(), "pi-anthropic-auth-agent-"));
+  vi.stubEnv("PI_CODING_AGENT_DIR", agentDir);
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  rmSync(agentDir, { recursive: true, force: true });
+});
+
+function writeGlobalConfig(config: unknown): void {
+  const path = globalConfigPath(agentDir);
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(path, JSON.stringify(config));
+}
 
 /**
  * Stubbed transport standing in for the bare built-in Anthropic transport that
@@ -327,6 +369,115 @@ describe("index registration: wrapper shapes every request on the provider-compo
       ["unregister:anthropic", "register:anthropic"],
       "unregisterProvider('anthropic') must run before registerProvider so a co-loaded stale copy's oauth cannot survive the merge",
     );
+  });
+});
+
+// pi keys an extension's `streamSimple` by provider name, so an Anthropic
+// OAuth subscription another extension registers under its own name
+// (pi-multi-pass's `anthropic-2`) runs on the bare built-in transport unless
+// the config names it (Issue #70).
+describe("index registration: extra providers named in the global config", () => {
+  const OWNER_REGISTRATION = {
+    api: "anthropic-messages",
+    oauth: { name: "Anthropic #2" },
+    models: [{ id: "claude-haiku-4-5" }],
+  } as unknown as ProviderConfig;
+
+  beforeEach(() => {
+    resetApiProviders();
+    delegateCalls.length = 0;
+    registryStubCalls = 0;
+    builtinTransportMock.mockClear();
+  });
+
+  describe("shaping", () => {
+    test("shapes OAuth requests on a named provider", async () => {
+      writeGlobalConfig({ providers: ["anthropic-2"] });
+
+      const { default: registerExtension } = await import("#src/index");
+      const { pi, dispatch } = createFakePi();
+      await registerExtension(pi);
+
+      dispatch(EXTRA_PROVIDER_MODEL, CONTEXT, { apiKey: OAUTH_TOKEN });
+
+      assert.equal(delegateCalls.length, 1);
+      assert.equal(
+        await delegateCallWasShaped(delegateCalls[0]),
+        true,
+        "an OAuth request on the named provider must carry the billing header",
+      );
+    });
+
+    test("registers the same wrapper instance as anthropic, so they share one learned floor", async () => {
+      writeGlobalConfig({ providers: ["anthropic-2"] });
+
+      const { default: registerExtension } = await import("#src/index");
+      const { pi, registrations } = createFakePi();
+      await registerExtension(pi);
+
+      const anthropic = registrations.get("anthropic")?.streamSimple;
+      assert.equal(typeof anthropic, "function");
+      assert.equal(registrations.get("anthropic-2")?.streamSimple, anthropic);
+    });
+
+    test("registers only anthropic when there is no config file", async () => {
+      const { default: registerExtension } = await import("#src/index");
+      const { pi, calls } = createFakePi();
+      await registerExtension(pi);
+
+      assert.deepEqual(calls, ["unregister:anthropic", "register:anthropic"]);
+    });
+  });
+
+  describe("the owning extension's registration", () => {
+    test("survives when the owner registered first, and is never unregistered", async () => {
+      writeGlobalConfig({ providers: ["anthropic-2"] });
+
+      const { default: registerExtension } = await import("#src/index");
+      const { pi, calls, registrations } = createFakePi();
+      pi.registerProvider("anthropic-2", OWNER_REGISTRATION);
+      await registerExtension(pi);
+
+      assert.equal(calls.includes("unregister:anthropic-2"), false);
+      const merged = registrations.get("anthropic-2");
+      assert.ok(merged, "the owner's registration must still exist");
+      assert.deepEqual(merged.oauth, OWNER_REGISTRATION.oauth);
+      assert.deepEqual(merged.models, OWNER_REGISTRATION.models);
+      assert.equal(typeof merged.streamSimple, "function");
+    });
+
+    test("keeps our wrapper when the owner registers afterwards", async () => {
+      writeGlobalConfig({ providers: ["anthropic-2"] });
+
+      const { default: registerExtension } = await import("#src/index");
+      const { pi, registrations } = createFakePi();
+      await registerExtension(pi);
+      pi.registerProvider("anthropic-2", OWNER_REGISTRATION);
+
+      const merged = registrations.get("anthropic-2");
+      assert.ok(merged, "the owner's registration must still exist");
+      assert.deepEqual(merged.oauth, OWNER_REGISTRATION.oauth);
+      assert.equal(
+        merged.streamSimple,
+        registrations.get("anthropic")?.streamSimple,
+      );
+    });
+  });
+
+  test("the status report lists the named provider with its layer", async () => {
+    writeGlobalConfig({ providers: ["anthropic-2"] });
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    onTestFinished(() => consoleSpy.mockRestore());
+
+    const { default: registerExtension } = await import("#src/index");
+    const { pi, commands } = createFakePi();
+    await registerExtension(pi);
+    await commands
+      .get("anthropic-auth:status")
+      ?.handler("", { hasUI: false, ui: { notify: vi.fn() } });
+
+    const [report] = consoleSpy.mock.calls[0];
+    assert.match(report, /shaped providers: anthropic, anthropic-2 \(global\)/);
   });
 });
 

@@ -1,9 +1,14 @@
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import {
+  type ExtensionAPI,
+  getAgentDir,
+} from "@earendil-works/pi-coding-agent";
 import {
   createStatusCommandHandler,
   type ExtensionDiagnostics,
 } from "./diagnostics";
+import { globalConfigPath, loadExtensionConfig } from "./extension-config";
+import { ExtraProviderShaping } from "./extra-provider-shaping";
 import { resolveBuiltinAnthropicStreamSimple } from "./host-transport";
 import { createAnthropicOAuthStreamSimple } from "./oauth-transport";
 
@@ -61,14 +66,6 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   const builtinAnthropicStreamSimple =
     await resolveBuiltinAnthropicStreamSimple();
 
-  const diagnostics: ExtensionDiagnostics = {
-    version: pkg.default.version,
-    modulePath: fileURLToPath(import.meta.url),
-    transportResolved: true,
-    shapedProviders: [],
-    configWarnings: [],
-  };
-
   // One wrapper instance owns the learned Claude Code floor (Issue #75), so
   // every provider it is registered on shares that floor.
   const streamSimple = createAnthropicOAuthStreamSimple(
@@ -95,12 +92,39 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     streamSimple,
   });
 
+  // `provider-composer`'s `streamWith` looks the extension config up by the
+  // request's provider *name*, so an Anthropic OAuth subscription another
+  // extension registers under its own name (pi-multi-pass's `anthropic-2`)
+  // falls through to the bare built-in transport: Claude Code headers but no
+  // billing header, which Anthropic answers with a misleading "out of extra
+  // usage" 400 (Issue #70).  The user names those providers in the config
+  // file, and each is registered with the same wrapper.  The global layer is
+  // applied here, so a named provider is shaped before any request reaches
+  // it, like `anthropic`.
+  const extraProviders = new ExtraProviderShaping(pi, streamSimple);
+  extraProviders.apply(
+    loadExtensionConfig(globalConfigPath(getAgentDir())),
+    "global",
+  );
+
+  const loadDiagnostics = {
+    version: pkg.default.version,
+    modulePath: fileURLToPath(import.meta.url),
+    transportResolved: true,
+  };
+  const readDiagnostics = (): ExtensionDiagnostics => ({
+    ...loadDiagnostics,
+    shapedProviders: extraProviders.shapedProviders(),
+    configWarnings: extraProviders.warnings(),
+  });
+
   // The /anthropic-auth:status command surfaces the loaded version, module
-  // path, and transport resolution result so users can confirm the extension
-  // is actually loaded and from which install location.
+  // path, transport resolution result, and shaped providers so users can
+  // confirm the extension is actually loaded, from which install location,
+  // and which providers it covers.
   pi.registerCommand("anthropic-auth:status", {
     description:
-      "Show pi-anthropic-auth diagnostics: version, loaded module path, and transport status.",
-    handler: createStatusCommandHandler(() => diagnostics),
+      "Show pi-anthropic-auth diagnostics: version, loaded module path, transport status, and shaped providers.",
+    handler: createStatusCommandHandler(readDiagnostics),
   });
 }
