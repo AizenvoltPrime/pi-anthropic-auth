@@ -49,3 +49,55 @@ Tests went from 157 to 194 (+37); `check`, `lint`, and `fallow:dead-code` stayed
 - Steps 5 and 8 were written implementation-alongside-test, so mutation probes stood in for the red: removing the dedup guard, accumulating warnings, adding an `oauth` key, dropping the trust check, and forcing the no-UI branch each turned a distinct test red.
 - Pre-completion reviewer: PASS (one provenance note: both the reporter's measurement and the live check are n=1 per condition, and both are attributed as such).
 - Cleanup left to the operator: the `anthropic-2` multi-pass subscription (`~/.pi/agent/multi-pass.json`, `auth.json` entry) should be removed with `/subs remove`; the extension config file written for the check was already deleted.
+
+## Stage: Final Retrospective (2026-09-24T05:30:23Z)
+
+### Session summary
+
+One session carried #70 from planning through TDD, a live end-to-end check, and ship: `v3.3.0` added config-file shaping of extension-registered Anthropic OAuth providers, closed #70, and closed third-party PR #71 with credit.
+The design moved twice at the operator's direction (env var to config file, then global-only to global plus trusted-project), and a planning premise ("needs a second Claude seat") was overturned during TDD by a same-account second login that reproduced the 400 live.
+
+### Observations
+
+#### What went well
+
+- Reading pi v0.86.0 source during planning overturned the issue's premise (`ModelRegistry.getRegisteredProviderIds()` exists) and confirmed the three mechanisms the design rests on (`streamWith` fallthrough, merge-on-register, per-request provider lookup) before any code was written.
+- The tidy-first assessor's three preparatory commits made both `feat:` commits purely additive; every step executed as planned with the suite green at each commit.
+- The live before/after check was cheap and conclusive: a second pi-multi-pass login of the same account reproduced the reporter's 400 on a trivial `-p` prompt in this repo, and the config turned it into `PONG`.
+
+#### What caused friction (agent side)
+
+- `missing-context` — the first direction `ask_user` offered env var / auto-detect / decline, built from first principles; the operator bounced it twice, first with a ToS concern, then with "is there another explicit channel?" pointing at `pi-permission-system` and `pi-subagents`.
+  Impact: two extra planning rounds (a web-search pass on Anthropic's terms, a survey of sibling config loaders) before the question could be answered.
+- `missing-context` — the plan asserted the live repro "needs a second Claude seat" without testing it; a second OAuth login of the same account under another provider id works.
+  Impact: the plan labelled the core measurement as unverifiable; the TDD session had to rediscover the path, which cost an operator explanation round.
+- `other` — the multi-pass setup took six `ask_user` rounds: the operator could not see the instruction text placed before each dialog, asked whether a `settings.json` entry and `/reload` were needed, and asked whether the package was installed.
+  Impact: roughly six round trips on one manual step; resolved only when the instructions went out as plain text with no dialog in the same turn.
+- `other` — a `sed` and an `Edit` on `test/diagnostics.test.ts` were issued in the same parallel batch; the `Edit` ran against the pre-`sed` text and failed.
+  Impact: one failed edit and a retry; self-identified.
+- `other` — live-verification cleanup was not part of the step: the TDD summary left the `anthropic-2` subscription to the operator, who then asked whether cleanup was done, and the multi-pass clone in `/tmp` was deleted before the subscription it was needed to remove.
+  Impact: `/subs remove` was no longer available, so cleanup became a direct edit of `~/.pi/agent/auth.json` (with a backup and a `PONG` check); one extra operator round.
+- `instruction-violation` (self-identified) — TDD steps 5 and 8 wrote implementation alongside tests instead of observing red first.
+  Impact: none; mutation probes (five distinct reds) stood in for the red step.
+
+#### What caused friction (user side)
+
+- The ToS stance and the preference for config files (with `pi-permission-system` as the model) arrived as redirects after the first direction question; stating them in the issue comment or `AGENTS.md` beforehand would have saved two rounds.
+- The report that `/login` "didn't initiate browser flow" (the step had not been run) prompted three tool calls into multi-pass's OAuth adapter before the correction.
+- The caveat question's answer "None." was read as "no caveat"; a one-word answer to a two-option question left the interpretation to the agent.
+
+### Diagnostic details
+
+- **Model-performance correlation** — the main session ran `claude-opus-5-5`; both subagents (`tidy-first-assessor`, `pre-completion-reviewer`) ran `claude-sonnet-5`, appropriate for read-only judgment and review.
+- **Escalation-delay tracking** — the multi-pass setup spent six consecutive `ask_user` rounds on one manual step; after the second bounce the agent should have switched to plain-text instructions and ended the turn.
+- **Feedback-loop gap analysis** — no gap: `pnpm run check`, the affected test file, and lint ran after every TDD step, and the full suite before each commit.
+
+### Changes made
+
+None.
+Four proposals were offered and the operator declined all of them:
+
+1. `AGENTS.md` Manual actions: send instructions as plain text and end the turn, using `ask_user` only for instruction-free actions.
+2. `.pi/skills/pi-cli-repro/SKILL.md`: a "Clean up live state" step for repros that write to `~/.pi/agent`.
+3. `.pi/skills/anthropic/SKILL.md`: a multi-account repro needs no second seat.
+4. `.pi/skills/anthropic/SKILL.md`: surface Anthropic's "ordinary, individual usage" wording when a change extends subscription use.
