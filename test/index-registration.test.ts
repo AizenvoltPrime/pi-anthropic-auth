@@ -126,38 +126,56 @@ type CapturedCommand = {
  * `streamSimple` no longer reaches pi-ai's own dispatch at all (Issue #46).
  * This fake therefore leaves the api registry untouched, as the real host does.
  *
- * Also captures `registerCommand` calls so tests can assert on and invoke
- * registered commands without needing the full Pi runtime.
+ * Registrations are keyed by provider name and merged the way pi's
+ * `ModelRuntime.registerProvider` merges them: defined values overlay the
+ * previous registration, undefined keys are preserved.  `dispatch` looks the
+ * config up by the request's provider, as `streamWith` does.
+ *
+ * Also captures `registerCommand` calls and `on()` handlers so tests can
+ * invoke registered commands and fire `session_start` without needing the full
+ * Pi runtime.
  */
 function createFakePi(): {
   pi: ExtensionAPI;
   commands: Map<string, CapturedCommand>;
   calls: string[];
+  registrations: Map<string, ProviderConfig>;
   dispatch: (
     model: Model<Api>,
     context: TranscriptContext,
     options?: SimpleStreamOptions,
   ) => AssistantMessageEventStream;
+  fireSessionStart: (ctx: FakeSessionContext) => Promise<void>;
 } {
   const commands = new Map<string, CapturedCommand>();
   // Ordered log of provider lifecycle calls so tests can assert that the
   // defensive `unregisterProvider` runs before `registerProvider`.
   const calls: string[] = [];
-  let registered: ProviderConfig | undefined;
+  const registrations = new Map<string, ProviderConfig>();
+  const sessionStartHandlers: SessionStartHandler[] = [];
   const pi: ExtensionAPI = {
     unregisterProvider(name: string): void {
       calls.push(`unregister:${name}`);
-      registered = undefined;
+      registrations.delete(name);
     },
     registerProvider(name: string, config: ProviderConfig): void {
       calls.push(`register:${name}`);
-      registered = config;
+      const merged: Record<string, unknown> = {
+        ...registrations.get(name),
+      };
+      for (const [key, value] of Object.entries(config)) {
+        if (value !== undefined) merged[key] = value;
+      }
+      registrations.set(name, merged);
     },
     registerCommand(
       name: string,
       options: { description?: string; handler: CapturedCommand["handler"] },
     ): void {
       commands.set(name, options);
+    },
+    on(event: string, handler: SessionStartHandler): void {
+      if (event === "session_start") sessionStartHandlers.push(handler);
     },
   } as unknown as ExtensionAPI;
 
@@ -166,16 +184,36 @@ function createFakePi(): {
     context: TranscriptContext,
     options?: SimpleStreamOptions,
   ): AssistantMessageEventStream => {
+    const registered = registrations.get(model.provider);
     if (!registered?.streamSimple || model.api !== registered.api) {
       throw new Error(
-        `no extension streamSimple registered for api "${model.api}"`,
+        `no extension streamSimple registered for provider "${model.provider}"`,
       );
     }
     return registered.streamSimple(model, context, options);
   };
 
-  return { pi, commands, calls, dispatch };
+  const fireSessionStart = async (ctx: FakeSessionContext): Promise<void> => {
+    for (const handler of sessionStartHandlers) {
+      await handler({ type: "session_start", reason: "startup" }, ctx);
+    }
+  };
+
+  return { pi, commands, calls, registrations, dispatch, fireSessionStart };
 }
+
+/** The `session_start` context fields `src/index.ts` reads. */
+interface FakeSessionContext {
+  cwd: string;
+  hasUI: boolean;
+  isProjectTrusted: () => boolean;
+  ui: { notify: Mock<(message: string, type?: string) => void> };
+}
+
+type SessionStartHandler = (
+  event: { type: "session_start"; reason: string },
+  ctx: FakeSessionContext,
+) => unknown;
 
 function samplePayload() {
   return {
