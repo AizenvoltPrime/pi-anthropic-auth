@@ -27,3 +27,24 @@ The plan is docs-only (`/build-plan`): record the findings, replace the `agent.s
 - The issue's cost section (raise the floor to 0.81.0, major bump) is moot: the floor is already `>=0.86.0`.
 - No follow-up issue filed: the operator declined the "docs now, default fn as follow-up" option.
 - Tidy-First assessment skipped: `src/` edits are comments only.
+
+## Stage: Implementation — Build (2026-09-24T06:30:22Z)
+
+### Session summary
+
+Executed all five plan steps: re-ran the live probe (still 2 vs 1 `before-provider-request` lines), rewrote the `docs/architecture.md` decision record, and narrowed the claim in `README.md` and the `src/` comments.
+Then narrowed it in `AGENTS.md`, the `anthropic` skill, the upstream-watch skill (two new assumption rows), and both seam decision records.
+Four `docs:` commits; tests, typecheck, and lint green throughout.
+
+### Observations
+
+- No deviations from the plan's file list.
+  `docs/architecture.md` cites issues as plain `Issue #N`, so it got no `[#53]` definition despite the plan saying so; the two seam records use reference links and got one each.
+- The step-2 insertion initially split the "That default resolves… / Up to pi 0.80.7…" run, leaving "that registry" with a distant referent; a second edit moved the new paragraphs after the bridge paragraph.
+- The em-dash trap fired twice in one step: an `oldText` with an escaped em-dash failed to match (harmless), and a `newText` wrote two literal `\u2014` escapes into `.pi/skills/anthropic/SKILL.md`.
+  The `u20xx` scan caught it; the sentence was reworded with parentheses instead.
+- Two sweep false-greens were caught before they could count: zsh passed a `$X` glob-flag variable as one word, and `rg` skips hidden `.pi/` without `--hidden`.
+  Only the re-run with inline flags and `--hidden` actually covered the skills.
+- Pre-completion reviewer: PASS.
+  It independently re-verified every upstream claim at v0.86.0/v0.87.1 and the `agentLoop` example signature against the installed 0.86.0 `agent-loop.d.ts`.
+  Its evidence-provenance section noted (WARN-level, non-blocking) that the probe is n=1 on a synthetic payload, which the docs already disclose.
