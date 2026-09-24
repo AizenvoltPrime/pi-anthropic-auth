@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.3.1](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.3.0...v3.3.1) (2026-09-24)
+
+
+### Documentation
+
+* record the compat-dispatch re-examination for pi 0.81-0.87 ([#53](https://github.com/gotgenes/pi-anthropic-auth/issues/53)) ([cd9e752](https://github.com/gotgenes/pi-anthropic-auth/commit/cd9e752aca26ae0f9813e190ba1ea35ad1a14968))
+* recommend ctx.modelRegistry.streamSimple for background agents ([#53](https://github.com/gotgenes/pi-anthropic-auth/issues/53)) ([28b56c8](https://github.com/gotgenes/pi-anthropic-auth/commit/28b56c8dd105a940d29c1ff016dd88fc4e754a00))
+* narrow the documented compat-dispatch gap in agent docs ([#53](https://github.com/gotgenes/pi-anthropic-auth/issues/53)) ([089628f](https://github.com/gotgenes/pi-anthropic-auth/commit/089628f762871d262dc28eafe395e2b86b795149))
+
 ## [3.3.0](https://github.com/gotgenes/pi-anthropic-auth/compare/v3.2.2...v3.3.0) (2026-09-24)
 
 
