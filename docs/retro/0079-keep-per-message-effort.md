@@ -60,3 +60,25 @@ Co-authored-by: AizenvoltPrime <alex11737@gmail.com>
 
 The PR close/merge comment thanks @AizenvoltPrime by name and links the implementing SHA(s).
 Reference the PR as `Refs #79` / `(#79)`, never `Closes #79`.
+
+## Stage: Implementation — TDD (2026-09-24T18:38:45Z)
+
+### Session summary
+
+Rebased the contributor's commit onto `main` (`a741507` → `65b14d2`, authorship kept), wrote a short plan inline (`docs/plans/0079-keep-per-message-effort.md`) since the PR review skipped `/plan-issue`, and completed its three follow-up steps: the drift suite, the `carriesEffort` refactor, and the docs.
+Tests went from 196 (rebased baseline, already including the contributor's two) to 199.
+Pre-completion reviewer: PASS.
+
+### Observations
+
+- `/tdd-plan` with no argument picked the newest plan, `0053-*`, which had already shipped; the adopt-as-is path in `/pr-review` produces no plan, so the operator chose to have one written inline before executing.
+- The operator chose to rebase the PR branch onto `main` rather than merge, keeping history linear; `/ship-issue` must force-push `pr-79` to `AizenvoltPrime:fix/keep-per-message-effort` (`maintainerCanModify: true`) before merging.
+  The branch also carries the triage commit `6138bbb` and the plan commit `277a6f1`, which ride along with the PR.
+- The `#69` doc comment's "Anthropic rejects an empty `content` array" was never measured: `2817a54` asserted it without a probe, and Pi's own effort messages are accepted with `content: []`.
+  The rewrite gives the real reason for the drop (an emptied update has nothing left to say).
+- The drift suite passed on arrival because the fix was already in the branch; it was proven by three mutations, each red on a distinct test: removing the keep clause, changing the expected historical effort, and giving the wrapped path an API-key token.
+  The last one motivated two vacuous-pass guards in the comparison test (non-empty effort list, billing header present on the shaped body).
+- ESLint rejected `String(init?.body)` (`no-base-to-string`) and a redundant `model.api` check in the model finder (`no-unnecessary-condition`); both were fixed before the test commit.
+- The upstream-watch row "`messages[]` carries only `user`/`assistant` roles" had been stale since Pi 0.85/0.86; it was replaced alongside the new effort-carrier row.
+- Live re-check on the rebased tree (pi 0.87.1, `claude-fable-5-1`, `--thinking low`): `systemMessagesAfter: 1`, `PONG`.
+- Reviewer (non-blocking): the plan commit `277a6f1` has no `Co-authored-by` trailer; the three follow-up commits do.
