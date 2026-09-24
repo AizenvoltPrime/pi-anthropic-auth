@@ -67,6 +67,12 @@ export default async function (pi: ExtensionAPI): Promise<void> {
     transportResolved: true,
   };
 
+  // One wrapper instance owns the learned Claude Code floor (Issue #75), so
+  // every provider it is registered on shares that floor.
+  const streamSimple = createAnthropicOAuthStreamSimple(
+    builtinAnthropicStreamSimple,
+  );
+
   // Defensively clear any prior `anthropic` registration before installing our
   // wrapper.  Pi's `registerProvider` MERGES each registration's defined values
   // over the previous one and preserves `undefined` keys (an intentional
@@ -84,9 +90,7 @@ export default async function (pi: ExtensionAPI): Promise<void> {
   pi.unregisterProvider("anthropic");
   pi.registerProvider("anthropic", {
     api: "anthropic-messages",
-    streamSimple: createAnthropicOAuthStreamSimple(
-      builtinAnthropicStreamSimple,
-    ),
+    streamSimple,
   });
 
   // The /anthropic-auth:status command surfaces the loaded version, module
