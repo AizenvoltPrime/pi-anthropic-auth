@@ -32,6 +32,7 @@ Before investigating the issue, load skills relevant to the change:
 - Load the `markdown-conventions` skill — it contains project-specific rules (one-sentence-per-line, frontmatter schema) that differ from standard markdown conventions.
 - Load the `design-review` skill and run its checklist before finalizing the design for any refactor, extraction, or change to shared interfaces or layer wiring — judge this from the issue, not from a plan that already shows wiring changes.
 - Load the `tidy-first` skill if the change will create or modify `src/`/`test/` files — you will use it after the design is settled to dispatch the Tidy-First assessor, whose recommendations become preparatory steps in the plan's TDD Order (a docs-only or config-only change skips it).
+- Load the `upstream-watch` skill when the issue revisits a decision resting on upstream Pi behavior: sweep both changelogs from the version the decision was made on through the latest release and unreleased `main` before building options (Refs #53).
 
 ## Gather context
 
@@ -100,6 +101,8 @@ When an option's differentiator is a behavior change, name the scenarios where b
 When the plan's design rests on a reproduction, state in Design Overview how the repro was produced.
 A fixture you constructed from your own model of the bug is not a reproduction — it can only confirm the model.
 Reproduce through the real code path (real session data, the upstream function itself) before treating a diagnosis as design input, or label the evidence as synthetic and unconfirmed (Refs #65).
+Before an `ask_user` option rests on an upstream symbol, confirm it is exported from the installed package's `dist/index.d.ts`, not just defined in the clone.
+Before it rests on how third-party extensions call pi, read one real caller (`npm pack <pkg>`) (Refs #53).
 Label every number in an `ask_user` option or the plan's predicted-effect table as measured or estimated.
 Measure when the command runs in under a minute; an inferred number with false precision ("18.0 s → ~18.5 s") sells an option on a benefit the real measurement may refute.
 When the proposal also has design ambiguities, fold those into the same `ask-user` call.

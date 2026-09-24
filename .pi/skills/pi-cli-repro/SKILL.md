@@ -72,6 +72,12 @@ To separate prompt-template issues from `AGENTS.md` or repo guidance:
 pi ... --no-context-files -p "hi"
 ```
 
+### Prove which call paths reach the wrapper
+
+Write a disposable extension whose `session_start` handler issues one request through the lane under test (`ctx.modelRegistry.streamSimple`, `compat.streamSimple`).
+Run it with `-ne -e ./src/index.ts -e <probe>` and `PI_ANTHROPIC_AUTH_DEBUG=all`, and count `before-provider-request` lines against a second lane.
+The debug line is the evidence: a short or synthetic payload often returns 200 even unshaped (Refs #53).
+
 ## Decision Rules
 
 When a live CLI repro fails:
